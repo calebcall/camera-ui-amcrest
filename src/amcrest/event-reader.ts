@@ -44,7 +44,10 @@ export function splitEventMultipart(chunk: string, boundary: string): string[] {
  * the next chunk. This guarantees each complete event is emitted exactly once,
  * regardless of how the underlying chunks are split.
  */
-export function extractCompleteEvents(buffer: string, boundary: string): { blobs: string[]; rest: string } {
+export function extractCompleteEvents(
+  buffer: string,
+  boundary: string,
+): { blobs: string[]; rest: string } {
   const marker = `--${boundary}`;
   const spaced = `-- ${boundary}`;
   const normalized = buffer.split(spaced).join(marker);

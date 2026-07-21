@@ -16,7 +16,10 @@ function fromAmcrestVideoCodec(codec?: string): string | undefined {
   return c || undefined;
 }
 
-export function parseEncodeConfig(text: string, channel: number): AmcrestStream[] {
+export function parseEncodeConfig(
+  text: string,
+  channel: number,
+): AmcrestStream[] {
   const kv = parseKeyValueBody(text);
   const ch = channel - 1;
   const prefix = `table.Encode[${ch}]`;

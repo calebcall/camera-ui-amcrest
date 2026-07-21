@@ -20,7 +20,9 @@ export interface AmcrestClientOptions {
 
 // Thrown when the device rejects the credentials (HTTP 401 after digest auth).
 export class AmcrestAuthError extends Error {
-  constructor(message = 'Authentication failed — check the username and password') {
+  constructor(
+    message = 'Authentication failed — check the username and password',
+  ) {
     super(message);
     this.name = 'AmcrestAuthError';
   }
@@ -30,11 +32,22 @@ export class AmcrestClient {
   constructor(private readonly opts: AmcrestClientOptions) {}
 
   urlFor(pathAndQuery: string): string {
-    const host = this.opts.httpPort && this.opts.httpPort !== 80 ? `${this.opts.ip}:${this.opts.httpPort}` : this.opts.ip;
+    const host =
+      this.opts.httpPort && this.opts.httpPort !== 80
+        ? `${this.opts.ip}:${this.opts.httpPort}`
+        : this.opts.ip;
     return `http://${host}${pathAndQuery}`;
   }
 
-  private async fetch(pathAndQuery: string, init?: { method?: string; headers?: Record<string, string>; body?: BodyInit; signal?: AbortSignal }): Promise<Response> {
+  private async fetch(
+    pathAndQuery: string,
+    init?: {
+      method?: string;
+      headers?: Record<string, string>;
+      body?: BodyInit;
+      signal?: AbortSignal;
+    },
+  ): Promise<Response> {
     const res = await digestFetch({
       url: this.urlFor(pathAndQuery),
       username: this.opts.username,
@@ -55,7 +68,14 @@ export class AmcrestClient {
   }
 
   rtspUrl(channel: number, subtype: number): string {
-    return buildRtspUrl({ ip: this.opts.ip, username: this.opts.username, password: this.opts.password, port: this.opts.port, channel, subtype });
+    return buildRtspUrl({
+      ip: this.opts.ip,
+      username: this.opts.username,
+      password: this.opts.password,
+      port: this.opts.port,
+      channel,
+      subtype,
+    });
   }
 
   async getSystemInfo(): Promise<AmcrestSystemInfo> {
@@ -64,12 +84,16 @@ export class AmcrestClient {
   }
 
   async getStreams(channel: number): Promise<AmcrestStream[]> {
-    const res = await this.fetch('/cgi-bin/configManager.cgi?action=getConfig&name=Encode');
+    const res = await this.fetch(
+      '/cgi-bin/configManager.cgi?action=getConfig&name=Encode',
+    );
     return parseEncodeConfig(await res.text(), channel);
   }
 
   async snapshot(channel: number, signal?: AbortSignal): Promise<Buffer> {
-    const res = await this.fetch(`/cgi-bin/snapshot.cgi?channel=${channel}`, { signal });
+    const res = await this.fetch(`/cgi-bin/snapshot.cgi?channel=${channel}`, {
+      signal,
+    });
     return Buffer.from(await res.arrayBuffer());
   }
 
@@ -80,7 +104,9 @@ export class AmcrestClient {
   }
 
   async getPtzCaps(channel: number): Promise<string> {
-    const res = await this.fetch(`/cgi-bin/ptz.cgi?action=getCurrentProtocolCaps&channel=${channel}`);
+    const res = await this.fetch(
+      `/cgi-bin/ptz.cgi?action=getCurrentProtocolCaps&channel=${channel}`,
+    );
     return await res.text();
   }
 
@@ -88,7 +114,10 @@ export class AmcrestClient {
     // heartbeat=N makes the camera emit periodic keep-alives, so the long-lived
     // stream keeps receiving data and undici's ~5min body timeout
     // (UND_ERR_BODY_TIMEOUT) never fires on cameras that are idle between events.
-    const res = await this.fetch('/cgi-bin/eventManager.cgi?action=attach&codes=[All]&heartbeat=30', { signal });
+    const res = await this.fetch(
+      '/cgi-bin/eventManager.cgi?action=attach&codes=[All]&heartbeat=30',
+      { signal },
+    );
     if (!res.body) {
       throw new Error('event stream has no body');
     }

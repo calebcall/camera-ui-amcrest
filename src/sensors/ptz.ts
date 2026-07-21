@@ -20,7 +20,9 @@ export class AmcrestPTZSensor extends PTZControl {
     this.capabilities = caps;
   }
 
-  override async setVelocity(velocity: PTZDirection | undefined): Promise<void> {
+  override async setVelocity(
+    velocity: PTZDirection | undefined,
+  ): Promise<void> {
     if (!velocity) return;
     try {
       await this.client.ptz(this.channel, {

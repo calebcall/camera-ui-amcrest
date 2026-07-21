@@ -11,7 +11,12 @@ export interface BuildCameraConfigInput {
   password: string;
   port: number;
   channel: number;
-  info: { manufacturer?: string; model?: string; serialNumber?: string; firmwareVersion?: string };
+  info: {
+    manufacturer?: string;
+    model?: string;
+    serialNumber?: string;
+    firmwareVersion?: string;
+  };
   streams: AmcrestStream[];
 }
 
@@ -24,7 +29,16 @@ export function buildCameraConfig(input: BuildCameraConfigInput): CameraConfig {
     sources.push({
       name: 'main',
       role: 'high-resolution',
-      urls: [buildRtspUrl({ ip: input.ip, username: input.username, password: input.password, port: input.port, channel: input.channel, subtype: main.subtype })],
+      urls: [
+        buildRtspUrl({
+          ip: input.ip,
+          username: input.username,
+          password: input.password,
+          port: input.port,
+          channel: input.channel,
+          subtype: main.subtype,
+        }),
+      ],
       // Snapshots are served by the plugin's SnapshotInterface (snapshot.cgi, a
       // lightweight HTTP JPEG with digest auth). Do NOT mark an RTSP source for
       // snapshots — that makes camera.ui grab frames via ffmpeg over RTSP, which
@@ -39,7 +53,16 @@ export function buildCameraConfig(input: BuildCameraConfigInput): CameraConfig {
     sources.push({
       name: 'sub',
       role: 'low-resolution',
-      urls: [buildRtspUrl({ ip: input.ip, username: input.username, password: input.password, port: input.port, channel: input.channel, subtype: sub.subtype })],
+      urls: [
+        buildRtspUrl({
+          ip: input.ip,
+          username: input.username,
+          password: input.password,
+          port: input.port,
+          channel: input.channel,
+          subtype: sub.subtype,
+        }),
+      ],
       useForSnapshot: false,
       hotMode: false,
       preload: false,

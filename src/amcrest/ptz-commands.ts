@@ -25,10 +25,22 @@ export function ptzCommandForVelocity(v: PtzVelocity): PtzCommand {
   }
 
   if (zoom !== 0) {
-    return { action: 'start', code: zoom > 0 ? 'ZoomTele' : 'ZoomWide', arg2: toSpeed(zoom) };
+    return {
+      action: 'start',
+      code: zoom > 0 ? 'ZoomTele' : 'ZoomWide',
+      arg2: toSpeed(zoom),
+    };
   }
   if (tilt !== 0) {
-    return { action: 'start', code: tilt > 0 ? 'Up' : 'Down', arg2: toSpeed(tilt) };
+    return {
+      action: 'start',
+      code: tilt > 0 ? 'Up' : 'Down',
+      arg2: toSpeed(tilt),
+    };
   }
-  return { action: 'start', code: pan > 0 ? 'Right' : 'Left', arg2: toSpeed(pan) };
+  return {
+    action: 'start',
+    code: pan > 0 ? 'Right' : 'Left',
+    arg2: toSpeed(pan),
+  };
 }

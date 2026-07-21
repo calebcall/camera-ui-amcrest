@@ -21,7 +21,8 @@ const WSD_PORT = 3702;
 
 // Amcrest/Dahua hardware/name prefixes seen in ONVIF scopes, used as a fallback
 // when the manufacturer scope is absent or generic.
-const AMCREST_HW_RE = /^(ip[0-9]|ipc|ip2m|ip3m|ip4m|ip5m|ip8m|ad[0-9]|amc|ash|asd|dh-|dahua)/i;
+const AMCREST_HW_RE =
+  /^(ip[0-9]|ipc|ip2m|ip3m|ip4m|ip5m|ip8m|ad[0-9]|amc|ash|asd|dh-|dahua)/i;
 
 export function buildWsDiscoveryProbe(messageId: string): string {
   return (
@@ -43,7 +44,10 @@ export function buildWsDiscoveryProbe(messageId: string): string {
 // Extract the text content of the first element whose local name matches `tag`,
 // ignoring any XML namespace prefix.
 function firstTag(xml: string, tag: string): string | undefined {
-  const re = new RegExp(`<[A-Za-z0-9_.]*:?${tag}[^>]*>([\\s\\S]*?)</[A-Za-z0-9_.]*:?${tag}>`, 'i');
+  const re = new RegExp(
+    `<[A-Za-z0-9_.]*:?${tag}[^>]*>([\\s\\S]*?)</[A-Za-z0-9_.]*:?${tag}>`,
+    'i',
+  );
   const m = re.exec(xml);
   return m ? m[1].trim() : undefined;
 }
@@ -111,7 +115,8 @@ function localIPv4Interfaces(): LocalIface[] {
   const out: LocalIface[] = [];
   for (const list of Object.values(nifs)) {
     for (const ni of list ?? []) {
-      if (ni.family === 'IPv4' && !ni.internal) out.push({ address: ni.address, cidr: ni.cidr });
+      if (ni.family === 'IPv4' && !ni.internal)
+        out.push({ address: ni.address, cidr: ni.cidr });
     }
   }
   return out;
@@ -124,10 +129,18 @@ export function subnetHosts(cidr: string | null): string[] {
   if (!cidr) return [];
   const [addr, prefixStr] = cidr.split('/');
   const prefix = Number(prefixStr);
-  if (!addr || !Number.isInteger(prefix) || prefix < MIN_SWEEP_PREFIX || prefix > 32) return [];
+  if (
+    !addr ||
+    !Number.isInteger(prefix) ||
+    prefix < MIN_SWEEP_PREFIX ||
+    prefix > 32
+  )
+    return [];
 
-  const ipToInt = (ip: string): number => ip.split('.').reduce((acc, o) => ((acc << 8) | (Number(o) & 255)) >>> 0, 0);
-  const intToIp = (n: number): string => [24, 16, 8, 0].map((s) => (n >>> s) & 255).join('.');
+  const ipToInt = (ip: string): number =>
+    ip.split('.').reduce((acc, o) => ((acc << 8) | (Number(o) & 255)) >>> 0, 0);
+  const intToIp = (n: number): string =>
+    [24, 16, 8, 0].map((s) => (n >>> s) & 255).join('.');
 
   const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
   const base = ipToInt(addr) & mask;
@@ -137,7 +150,10 @@ export function subnetHosts(cidr: string | null): string[] {
   return hosts;
 }
 
-export async function discoverWs(timeoutMs: number, logger: WsDiscoveryLogger): Promise<WsDiscovered[]> {
+export async function discoverWs(
+  timeoutMs: number,
+  logger: WsDiscoveryLogger,
+): Promise<WsDiscovered[]> {
   return new Promise((resolvePromise) => {
     const found = new Map<string, WsDiscovered>();
     const seen = new Set<string>();
@@ -152,7 +168,9 @@ export async function discoverWs(timeoutMs: number, logger: WsDiscoveryLogger): 
     logger.log(
       `WS-Discovery: probing ${ifaces.length} interface(s): ${ifaces.length ? ifaces.map((i) => i.cidr ?? i.address).join(', ') : '(default only)'}`,
     );
-    const bindTargets: LocalIface[] = ifaces.length ? ifaces : [{ address: '', cidr: null }];
+    const bindTargets: LocalIface[] = ifaces.length
+      ? ifaces
+      : [{ address: '', cidr: null }];
 
     const timer = setTimeout(finish, timeoutMs);
     cleanups.push(() => clearTimeout(timer));
@@ -178,8 +196,13 @@ export async function discoverWs(timeoutMs: number, logger: WsDiscoveryLogger): 
         // Diagnostic: a reply we received but could not parse (unexpected format).
         if (!seen.has(src)) {
           seen.add(src);
-          const snippet = msg.toString('utf8').slice(0, 200).replace(/\s+/g, ' ');
-          logger.log(`WS-Discovery: unparsed reply from ${src} (len=${msg.length}): ${snippet}`);
+          const snippet = msg
+            .toString('utf8')
+            .slice(0, 200)
+            .replace(/\s+/g, ' ');
+          logger.log(
+            `WS-Discovery: unparsed reply from ${src} (len=${msg.length}): ${snippet}`,
+          );
         }
         return;
       }
@@ -189,7 +212,9 @@ export async function discoverWs(timeoutMs: number, logger: WsDiscoveryLogger): 
       const mfr = device.manufacturer ?? '?';
       const name = device.name ?? '?';
       const hw = device.hardware ?? '?';
-      logger.log(`WS-Discovery: ip=${device.ip} (via ${src}) manufacturer=${mfr} name=${name} hardware=${hw} amcrest=${amcrest}`);
+      logger.log(
+        `WS-Discovery: ip=${device.ip} (via ${src}) manufacturer=${mfr} name=${name} hardware=${hw} amcrest=${amcrest}`,
+      );
       if (amcrest) {
         found.set(device.ip, device);
       }
@@ -200,7 +225,9 @@ export async function discoverWs(timeoutMs: number, logger: WsDiscoveryLogger): 
       const socket = createSocket({ type: 'udp4', reuseAddr: true });
       sockets.push(socket);
       // One socket failing (e.g. bind conflict) must not abort the whole scan.
-      socket.on('error', (err) => logger.debug(`WS-Discovery socket error (${addr ?? '*'}):`, err));
+      socket.on('error', (err) =>
+        logger.debug(`WS-Discovery socket error (${addr ?? '*'}):`, err),
+      );
       socket.on('message', handleMessage);
       socket.bind(addr ? { address: addr, port: 0 } : { port: 0 }, () => {
         try {
@@ -212,18 +239,29 @@ export async function discoverWs(timeoutMs: number, logger: WsDiscoveryLogger): 
 
         const send = (target: string) => {
           try {
-            socket.send(Buffer.from(buildWsDiscoveryProbe(randomUUID()), 'utf8'), WSD_PORT, target);
+            socket.send(
+              Buffer.from(buildWsDiscoveryProbe(randomUUID()), 'utf8'),
+              WSD_PORT,
+              target,
+            );
           } catch (err) {
-            logger.debug(`WS-Discovery send failed (${addr ?? '*'} -> ${target}):`, err);
+            logger.debug(
+              `WS-Discovery send failed (${addr ?? '*'} -> ${target}):`,
+              err,
+            );
           }
         };
 
         // Unicast sweep of this interface's subnet: every ONVIF device replies
         // unicast to our ephemeral port, so we never depend on multicast-group
         // replies or share port 3702 with the ONVIF plugin. Sent once.
-        const hosts = subnetHosts(iface.cidr).filter((h) => h !== iface.address);
+        const hosts = subnetHosts(iface.cidr).filter(
+          (h) => h !== iface.address,
+        );
         if (hosts.length) {
-          logger.log(`WS-Discovery: unicast sweep of ${iface.cidr} (${hosts.length} hosts)`);
+          logger.log(
+            `WS-Discovery: unicast sweep of ${iface.cidr} (${hosts.length} hosts)`,
+          );
           for (const h of hosts) send(h);
         }
 
@@ -237,6 +275,9 @@ export async function discoverWs(timeoutMs: number, logger: WsDiscoveryLogger): 
     const sendAll = () => senders.forEach((s) => s());
     const firstSend = setTimeout(sendAll, 100);
     const resend = setInterval(sendAll, PROBE_RESEND_MS);
-    cleanups.push(() => clearTimeout(firstSend), () => clearInterval(resend));
+    cleanups.push(
+      () => clearTimeout(firstSend),
+      () => clearInterval(resend),
+    );
   });
 }

@@ -24,7 +24,9 @@ const DISCOVERY_TIMEOUT_MS = 6000;
 const DEFAULT_RTSP_PORT = 554;
 const DEFAULT_HTTP_PORT = 80;
 
-export default class AmcrestPlugin extends BasePlugin<AmcrestPluginStorage> implements DiscoveryProvider {
+export default class AmcrestPlugin
+  extends BasePlugin<AmcrestPluginStorage>
+  implements DiscoveryProvider {
   private cameras = new Map<string, AmcrestCamera>();
   private existing = new Map<string, CameraDevice>();
   // Adoption-form fields (ip/username/password/channel/port/httpPort) resolved in
@@ -33,7 +35,11 @@ export default class AmcrestPlugin extends BasePlugin<AmcrestPluginStorage> impl
   // hands them to AmcrestCamera.initialize() to persist into its own storage.
   private pendingSettings = new Map<string, AmcrestInitialSettings>();
 
-  constructor(logger: LoggerService, api: PluginAPI, storage: DeviceStorage<AmcrestPluginStorage>) {
+  constructor(
+    logger: LoggerService,
+    api: PluginAPI,
+    storage: DeviceStorage<AmcrestPluginStorage>,
+  ) {
     super(logger, api, storage);
     this.api.on(API_EVENT.SHUTDOWN, this.stop.bind(this));
   }
@@ -47,7 +53,8 @@ export default class AmcrestPlugin extends BasePlugin<AmcrestPluginStorage> impl
         type: 'string',
         key: 'manualHost',
         title: 'Add Camera — IP Address',
-        description: 'Enter the camera or doorbell IP (e.g. 192.168.1.50), then press "Add Camera". It will appear in the list of cameras to adopt.',
+        description:
+          'Enter the camera or doorbell IP (e.g. 192.168.1.50), then press "Add Camera". It will appear in the list of cameras to adopt.',
         required: false,
         store: true,
       },
@@ -64,7 +71,8 @@ export default class AmcrestPlugin extends BasePlugin<AmcrestPluginStorage> impl
         key: 'addManual',
         title: 'Add Camera',
         color: 'success',
-        description: 'Register the camera at the IP above so it can be adopted.',
+        description:
+          'Register the camera at the IP above so it can be adopted.',
         onClick: async (value) => this.addManualCamera(value),
       },
     ];
@@ -74,24 +82,51 @@ export default class AmcrestPlugin extends BasePlugin<AmcrestPluginStorage> impl
     // The submit handler receives the live form values. Handle both the flat
     // shape and a possible { config } wrapper.
     const raw = (value ?? {}) as Record<string, unknown>;
-    const fields = (raw.config ?? raw) as { manualHost?: string; manualName?: string };
+    const fields = (raw.config ?? raw) as {
+      manualHost?: string;
+      manualName?: string;
+    };
     const host = (fields.manualHost ?? '').trim();
     if (!host) {
-      return { toast: { type: 'warning', message: 'Enter an IP address before pressing "Add Camera".' } };
+      return {
+        toast: {
+          type: 'warning',
+          message: 'Enter an IP address before pressing "Add Camera".',
+        },
+      };
     }
     const id = `amcrest-${host}`;
     if (Array.from(this.existing.values()).some((c) => c.nativeId === id)) {
-      return { toast: { type: 'info', message: `A camera for ${host} has already been added.` } };
+      return {
+        toast: {
+          type: 'info',
+          message: `A camera for ${host} has already been added.`,
+        },
+      };
     }
     const name = (fields.manualName ?? '').trim() || `Amcrest (${host})`;
     try {
-      await this.api.deviceManager.pushDiscoveredCameras([{ id, name, manufacturer: 'Amcrest', address: host }]);
+      await this.api.deviceManager.pushDiscoveredCameras([
+        { id, name, manufacturer: 'Amcrest', address: host },
+      ]);
     } catch (error) {
       this.logger.error('Failed to add manual Amcrest camera:', error);
-      return { toast: { type: 'error', message: `Failed to add camera ${host}: ${String(error)}` } };
+      return {
+        toast: {
+          type: 'error',
+          message: `Failed to add camera ${host}: ${String(error)}`,
+        },
+      };
     }
-    this.logger.log(`Manual Amcrest camera added: ${name} (${host}). Adopt it from the camera list to enter credentials.`);
-    return { toast: { type: 'success', message: `${name} added — adopt it from the camera list.` } };
+    this.logger.log(
+      `Manual Amcrest camera added: ${name} (${host}). Adopt it from the camera list to enter credentials.`,
+    );
+    return {
+      toast: {
+        type: 'success',
+        message: `${name} added — adopt it from the camera list.`,
+      },
+    };
   }
 
   async configureCameras(cameras: CameraDevice[]): Promise<void> {
@@ -103,7 +138,9 @@ export default class AmcrestPlugin extends BasePlugin<AmcrestPluginStorage> impl
 
   async onCameraAdded(camera: CameraDevice): Promise<void> {
     this.existing.set(camera.id, camera);
-    const initialSettings = camera.nativeId ? this.pendingSettings.get(camera.nativeId) : undefined;
+    const initialSettings = camera.nativeId
+      ? this.pendingSettings.get(camera.nativeId)
+      : undefined;
     await this.initCamera(camera, initialSettings);
     if (camera.nativeId) this.pendingSettings.delete(camera.nativeId);
   }
@@ -141,10 +178,17 @@ export default class AmcrestPlugin extends BasePlugin<AmcrestPluginStorage> impl
       byIp.set(d.ip, { model: d.hardware ?? byIp.get(d.ip)?.model });
     }
 
-    this.logger.log(`Amcrest discovery: ${byIp.size} device(s) found (WS-Discovery: ${ws.length}, DHIP: ${dahua.length})`);
+    this.logger.log(
+      `Amcrest discovery: ${byIp.size} device(s) found (WS-Discovery: ${ws.length}, DHIP: ${dahua.length})`,
+    );
 
     return Array.from(byIp.entries())
-      .filter(([ip]) => !Array.from(this.existing.values()).some((c) => c.nativeId === `amcrest-${ip}`))
+      .filter(
+        ([ip]) =>
+          !Array.from(this.existing.values()).some(
+            (c) => c.nativeId === `amcrest-${ip}`,
+          ),
+      )
       .map(([ip, info]) => ({
         id: `amcrest-${ip}`,
         name: info.model ? `Amcrest ${info.model}` : `Amcrest (${ip})`,
@@ -154,18 +198,64 @@ export default class AmcrestPlugin extends BasePlugin<AmcrestPluginStorage> impl
       }));
   }
 
-  async onGetCameraSettings(camera: DiscoveredCamera): Promise<JsonSchemaWithoutCallbacks[]> {
+  async onGetCameraSettings(
+    camera: DiscoveredCamera,
+  ): Promise<JsonSchemaWithoutCallbacks[]> {
     return [
-      { type: 'string', key: 'ip', title: 'IP Address', description: 'Camera IP address, e.g. 192.168.1.50', required: true, defaultValue: camera.address },
-      { type: 'string', key: 'username', title: 'Username', description: 'Amcrest account username.', required: true },
-      { type: 'string', format: 'password', key: 'password', title: 'Password', description: 'Amcrest account password.', required: true },
-      { type: 'number', key: 'channel', title: 'Channel', description: 'Camera channel (default 1).', required: false, defaultValue: 1 },
-      { type: 'number', key: 'port', title: 'RTSP Port', description: 'RTSP port (default 554).', required: false, defaultValue: DEFAULT_RTSP_PORT },
-      { type: 'number', key: 'httpPort', title: 'HTTP Port', description: 'HTTP/CGI port (default 80).', required: false, defaultValue: DEFAULT_HTTP_PORT },
+      {
+        type: 'string',
+        key: 'ip',
+        title: 'IP Address',
+        description: 'Camera IP address, e.g. 192.168.1.50',
+        required: true,
+        defaultValue: camera.address,
+      },
+      {
+        type: 'string',
+        key: 'username',
+        title: 'Username',
+        description: 'Amcrest account username.',
+        required: true,
+      },
+      {
+        type: 'string',
+        format: 'password',
+        key: 'password',
+        title: 'Password',
+        description: 'Amcrest account password.',
+        required: true,
+      },
+      {
+        type: 'number',
+        key: 'channel',
+        title: 'Channel',
+        description: 'Camera channel (default 1).',
+        required: false,
+        defaultValue: 1,
+      },
+      {
+        type: 'number',
+        key: 'port',
+        title: 'RTSP Port',
+        description: 'RTSP port (default 554).',
+        required: false,
+        defaultValue: DEFAULT_RTSP_PORT,
+      },
+      {
+        type: 'number',
+        key: 'httpPort',
+        title: 'HTTP Port',
+        description: 'HTTP/CGI port (default 80).',
+        required: false,
+        defaultValue: DEFAULT_HTTP_PORT,
+      },
     ];
   }
 
-  async onAdoptCamera(camera: DiscoveredCamera, settings: Record<string, unknown>): Promise<CameraConfig> {
+  async onAdoptCamera(
+    camera: DiscoveredCamera,
+    settings: Record<string, unknown>,
+  ): Promise<CameraConfig> {
     const ip = (settings.ip as string) || camera.address;
     const username = settings.username as string;
     const password = settings.password as string;
@@ -176,14 +266,22 @@ export default class AmcrestPlugin extends BasePlugin<AmcrestPluginStorage> impl
       throw new Error('IP address, username and password are required');
     }
 
-    const client = new AmcrestClient({ ip, username, password, port, httpPort });
+    const client = new AmcrestClient({
+      ip,
+      username,
+      password,
+      port,
+      httpPort,
+    });
     const info = await client.getSystemInfo(); // throws 'not amcrest' if wrong device
     const streams = await client.getStreams(channel);
     if (streams.length === 0) {
       throw new Error('No enabled video streams found on the device');
     }
 
-    const name = camera.name || (info.deviceType ? `Amcrest ${info.deviceType}` : `Amcrest (${ip})`);
+    const name =
+      camera.name ||
+      (info.deviceType ? `Amcrest ${info.deviceType}` : `Amcrest (${ip})`);
     const nativeId = `amcrest-${ip}`;
     const config = buildCameraConfig({
       name,
@@ -193,18 +291,35 @@ export default class AmcrestPlugin extends BasePlugin<AmcrestPluginStorage> impl
       password,
       port,
       channel,
-      info: { manufacturer: 'Amcrest', model: info.deviceType, serialNumber: info.serialNumber, firmwareVersion: info.hardwareVersion },
+      info: {
+        manufacturer: 'Amcrest',
+        model: info.deviceType,
+        serialNumber: info.serialNumber,
+        firmwareVersion: info.hardwareVersion,
+      },
       streams,
     });
     // Config is returned to the SDK (persisted), but ip/username/password/etc are not
     // part of it — stash them here so onCameraAdded can hand them to
     // AmcrestCamera.initialize() to persist into the camera's own storage.
-    this.pendingSettings.set(nativeId, { ip, username, password, channel, port, httpPort });
-    this.logger.log(`Amcrest device adopted: ${name} (${streams.length} stream(s))`);
+    this.pendingSettings.set(nativeId, {
+      ip,
+      username,
+      password,
+      channel,
+      port,
+      httpPort,
+    });
+    this.logger.log(
+      `Amcrest device adopted: ${name} (${streams.length} stream(s))`,
+    );
     return config;
   }
 
-  private async initCamera(camera: CameraDevice, initialSettings?: AmcrestInitialSettings): Promise<void> {
+  private async initCamera(
+    camera: CameraDevice,
+    initialSettings?: AmcrestInitialSettings,
+  ): Promise<void> {
     const controller = new AmcrestCamera(camera);
     this.cameras.set(camera.id, controller);
     await controller.initialize(initialSettings);

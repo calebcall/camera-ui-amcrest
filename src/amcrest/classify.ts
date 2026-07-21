@@ -1,15 +1,22 @@
 import type { AmcrestEvent } from './events.js';
 
 export type AmcrestClassification =
-  { kind: 'motion'; active: boolean } | { kind: 'audio'; active: boolean } | { kind: 'object'; category: 'person' | 'vehicle'; active: boolean } | { kind: 'doorbell' };
+  | { kind: 'motion'; active: boolean }
+  | { kind: 'audio'; active: boolean }
+  | { kind: 'object'; category: 'person' | 'vehicle'; active: boolean }
+  | { kind: 'doorbell' };
 
-function objectTypeToCategory(objectType?: string): 'person' | 'vehicle' | undefined {
+function objectTypeToCategory(
+  objectType?: string,
+): 'person' | 'vehicle' | undefined {
   if (objectType === 'Human') return 'person';
   if (objectType === 'Vehicle') return 'vehicle';
   return undefined;
 }
 
-export function classifyAmcrestEvent(ev: AmcrestEvent): AmcrestClassification | undefined {
+export function classifyAmcrestEvent(
+  ev: AmcrestEvent,
+): AmcrestClassification | undefined {
   const active = ev.action === 'Start';
 
   switch (ev.code) {
@@ -25,7 +32,9 @@ export function classifyAmcrestEvent(ev: AmcrestEvent): AmcrestClassification | 
       return { kind: 'object', category: 'person', active };
     case 'CrossLineDetection':
     case 'CrossRegionDetection': {
-      const objectType = (ev.data as { Object?: { ObjectType?: string } } | undefined)?.Object?.ObjectType;
+      const objectType = (
+        ev.data as { Object?: { ObjectType?: string } } | undefined
+      )?.Object?.ObjectType;
       const category = objectTypeToCategory(objectType);
       if (!category) return undefined;
       return { kind: 'object', category, active };

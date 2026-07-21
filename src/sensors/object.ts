@@ -24,11 +24,13 @@ export class AmcrestObjectSensor extends ObjectSensor {
     }
 
     // Amcrest smart events lack usable normalized boxes — synthesize a full-frame detection per category for labels.
-    const detections: TrackedDetection[] = Array.from(this.active).map((label) => ({
-      label,
-      confidence: 1,
-      box: { x: 0, y: 0, width: 1, height: 1 },
-    }));
+    const detections: TrackedDetection[] = Array.from(this.active).map(
+      (label) => ({
+        label,
+        confidence: 1,
+        box: { x: 0, y: 0, width: 1, height: 1 },
+      }),
+    );
     this.reportDetections(true, detections);
   }
 }

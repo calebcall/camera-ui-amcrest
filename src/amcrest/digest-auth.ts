@@ -27,7 +27,9 @@ export function parseWwwAuthenticate(header: string): Record<string, string> {
   return out;
 }
 
-export function selectQop(challengeQop: string | undefined): string | undefined {
+export function selectQop(
+  challengeQop: string | undefined,
+): string | undefined {
   if (!challengeQop) return undefined;
   const tokens = challengeQop
     .split(',')
@@ -43,9 +45,17 @@ export function buildDigestAuthHeader(p: DigestParams): string {
   const cnonce = p.cnonce ?? randomBytes(8).toString('hex');
   const ha1 = md5(`${p.username}:${p.realm}:${p.password}`);
   const ha2 = md5(`${p.method}:${p.uri}`);
-  const response = qop ? md5(`${ha1}:${p.nonce}:${nc}:${cnonce}:${qop}:${ha2}`) : md5(`${ha1}:${p.nonce}:${ha2}`);
+  const response = qop
+    ? md5(`${ha1}:${p.nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
+    : md5(`${ha1}:${p.nonce}:${ha2}`);
 
-  const parts = [`username="${p.username}"`, `realm="${p.realm}"`, `nonce="${p.nonce}"`, `uri="${p.uri}"`, `response="${response}"`];
+  const parts = [
+    `username="${p.username}"`,
+    `realm="${p.realm}"`,
+    `nonce="${p.nonce}"`,
+    `uri="${p.uri}"`,
+    `response="${response}"`,
+  ];
   if (p.algorithm) parts.push(`algorithm=${p.algorithm}`);
   if (qop) {
     parts.push(`qop=${qop}`, `nc=${nc}`, `cnonce="${cnonce}"`);
@@ -66,7 +76,11 @@ export interface DigestFetchOptions {
 
 export async function digestFetch(opts: DigestFetchOptions): Promise<Response> {
   const method = opts.method ?? 'GET';
-  const first = await fetch(opts.url, { method, headers: opts.headers, signal: opts.signal });
+  const first = await fetch(opts.url, {
+    method,
+    headers: opts.headers,
+    signal: opts.signal,
+  });
   if (first.status !== 401) {
     return first;
   }

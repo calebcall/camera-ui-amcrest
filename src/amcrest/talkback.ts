@@ -6,7 +6,9 @@ export interface TalkbackTarget {
   sampleRate: number;
 }
 
-export function selectTalkbackTarget(deviceType: string | undefined): TalkbackTarget {
+export function selectTalkbackTarget(
+  deviceType: string | undefined,
+): TalkbackTarget {
   const { family } = classifyDevice(deviceType);
   if (family === 'dahua') {
     return { codec: 'pcm_alaw', contentType: 'Audio/G.711A', sampleRate: 8000 };

@@ -20,7 +20,13 @@ const MCAST_ADDR = '239.255.255.251';
 const MCAST_PORT = 37810;
 
 export function buildDiscoveryProbe(): Buffer {
-  const body = Buffer.from(JSON.stringify({ method: 'DHDiscover.search', params: { mac: '', uni: 1 } }), 'utf8');
+  const body = Buffer.from(
+    JSON.stringify({
+      method: 'DHDiscover.search',
+      params: { mac: '', uni: 1 },
+    }),
+    'utf8',
+  );
   const header = Buffer.alloc(32);
   header.writeUInt8(0x20, 0);
   header.writeUInt8(0x00, 1);
@@ -30,13 +36,21 @@ export function buildDiscoveryProbe(): Buffer {
   return Buffer.concat([header, body]);
 }
 
-export function parseDiscoveryResponse(buf: Buffer): DiscoveredAmcrest | undefined {
+export function parseDiscoveryResponse(
+  buf: Buffer,
+): DiscoveredAmcrest | undefined {
   const start = buf.indexOf(0x7b); // '{'
   const end = buf.lastIndexOf(0x7d); // '}'
   if (start === -1 || end === -1 || end <= start) return undefined;
   try {
     const json = JSON.parse(buf.subarray(start, end + 1).toString('utf8')) as {
-      params?: { deviceInfo?: { IPv4Address?: { IPAddress?: string }; DeviceType?: string; PhysicalAddress?: string } };
+      params?: {
+        deviceInfo?: {
+          IPv4Address?: { IPAddress?: string };
+          DeviceType?: string;
+          PhysicalAddress?: string;
+        };
+      };
     };
     const info = json.params?.deviceInfo;
     const ip = info?.IPv4Address?.IPAddress;
@@ -47,7 +61,10 @@ export function parseDiscoveryResponse(buf: Buffer): DiscoveredAmcrest | undefin
   }
 }
 
-export async function discover(timeoutMs: number, logger: { debug: (...a: unknown[]) => void }): Promise<DiscoveredAmcrest[]> {
+export async function discover(
+  timeoutMs: number,
+  logger: { debug: (...a: unknown[]) => void },
+): Promise<DiscoveredAmcrest[]> {
   return new Promise((resolvePromise) => {
     const found = new Map<string, DiscoveredAmcrest>();
     const socket = createSocket({ type: 'udp4', reuseAddr: true });

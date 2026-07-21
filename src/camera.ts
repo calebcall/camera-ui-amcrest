@@ -9,15 +9,36 @@ import { digestFetch } from './amcrest/digest-auth.js';
 import { extractCompleteEvents } from './amcrest/event-reader.js';
 import { parseAmcrestEvent } from './amcrest/events.js';
 import { selectTalkbackTarget } from './amcrest/talkback.js';
-import { AmcrestAudioSensor, AmcrestDoorbellTrigger, AmcrestMotionSensor, AmcrestObjectSensor, AmcrestPTZSensor } from './sensors/index.js';
+import {
+  AmcrestAudioSensor,
+  AmcrestDoorbellTrigger,
+  AmcrestMotionSensor,
+  AmcrestObjectSensor,
+  AmcrestPTZSensor,
+} from './sensors/index.js';
 
-import type { AmcrestCapabilities, AmcrestCameraStorage, AmcrestInitialSettings } from './types.js';
-import type { CameraDevice, DeviceStorage, LoggerService, SnapshotInterface, StreamingInterface } from '@camera.ui/sdk';
+import type {
+  AmcrestCapabilities,
+  AmcrestCameraStorage,
+  AmcrestInitialSettings,
+} from './types.js';
+import type {
+  CameraDevice,
+  DeviceStorage,
+  LoggerService,
+  SnapshotInterface,
+  StreamingInterface,
+} from '@camera.ui/sdk';
 import type { Logger, RtspServerSink } from '@seydx/rtsp';
 
 // Advertised to RTSP viewers as the backchannel codec and, reused verbatim, as the
 // BackchannelTranscoder's inbound ("from") format — the shapes are identical.
-const BACKCHANNEL_ADVERTISE = { codec: 'pcm_alaw', payloadType: 8, clockRate: 8000, channels: 1 } as const;
+const BACKCHANNEL_ADVERTISE = {
+  codec: 'pcm_alaw',
+  payloadType: 8,
+  clockRate: 8000,
+  channels: 1,
+} as const;
 const EVENT_RECONNECT_BASE_MS = 2000;
 const EVENT_RECONNECT_MAX_MS = 30000;
 
@@ -80,22 +101,33 @@ export class AmcrestCamera {
       this.storage.values.ip = initialSettings.ip;
       this.storage.values.username = initialSettings.username;
       this.storage.values.password = initialSettings.password;
-      if (initialSettings.channel !== undefined) this.storage.values.channel = initialSettings.channel;
-      if (initialSettings.port !== undefined) this.storage.values.port = initialSettings.port;
-      if (initialSettings.httpPort !== undefined) this.storage.values.httpPort = initialSettings.httpPort;
+      if (initialSettings.channel !== undefined)
+        this.storage.values.channel = initialSettings.channel;
+      if (initialSettings.port !== undefined)
+        this.storage.values.port = initialSettings.port;
+      if (initialSettings.httpPort !== undefined)
+        this.storage.values.httpPort = initialSettings.httpPort;
       await this.storage.save();
     }
 
     const v = this.storage.values;
     if (!v.ip || !v.username || !v.password) {
-      this.cameraDevice.logger.attention('Please configure the Amcrest connection settings');
+      this.cameraDevice.logger.attention(
+        'Please configure the Amcrest connection settings',
+      );
       return;
     }
 
     // Built here, after settings are confirmed present (and persisted, if this is a
     // fresh adoption) — never in the constructor, where storage.values would still be
     // empty on a brand-new adoption.
-    this.client = new AmcrestClient({ ip: v.ip, username: v.username, password: v.password, port: v.port, httpPort: v.httpPort });
+    this.client = new AmcrestClient({
+      ip: v.ip,
+      username: v.username,
+      password: v.password,
+      port: v.port,
+      httpPort: v.httpPort,
+    });
 
     this.capabilities = await this.detectCapabilities();
     await this.setupStreaming();
@@ -121,7 +153,10 @@ export class AmcrestCamera {
     if (!this.client) return undefined;
     try {
       const buf = await this.client.snapshot(this.channel);
-      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+      return buf.buffer.slice(
+        buf.byteOffset,
+        buf.byteOffset + buf.byteLength,
+      ) as ArrayBuffer;
     } catch (error) {
       this.log.error('Snapshot failed:', error);
       return undefined;
@@ -162,8 +197,14 @@ export class AmcrestCamera {
       logger: this.relayLogger,
     });
     this.relay.on('stop', () => this.resetTalkback());
-    this.rtspServer = await this.relay.serveRtsp({ path: 'live', backchannel: { ...BACKCHANNEL_ADVERTISE }, sdpTimeout: 30000 });
-    this.rtspServer.on('backchannel', (rtp: Buffer) => this.handleTalkbackRtp(rtp));
+    this.rtspServer = await this.relay.serveRtsp({
+      path: 'live',
+      backchannel: { ...BACKCHANNEL_ADVERTISE },
+      sdpTimeout: 30000,
+    });
+    this.rtspServer.on('backchannel', (rtp: Buffer) =>
+      this.handleTalkbackRtp(rtp),
+    );
     this.log.log('Amcrest RTSP relay started');
   }
 
@@ -174,7 +215,13 @@ export class AmcrestCamera {
       this.openTalkbackPost(target.contentType, this.talkbackBody);
       this.transcoder = new BackchannelTranscoder({
         from: { ...BACKCHANNEL_ADVERTISE },
-        to: { codec: target.codec, sampleRate: target.sampleRate, channels: 1, format: target.codec === 'aac' ? 'adts' : 'alaw', bitRate: 32000 },
+        to: {
+          codec: target.codec,
+          sampleRate: target.sampleRate,
+          channels: 1,
+          format: target.codec === 'aac' ? 'adts' : 'alaw',
+          bitRate: 32000,
+        },
         output: (chunk: Buffer) => this.talkbackBody?.write(chunk),
         logger: this.relayLogger,
       });
@@ -191,7 +238,9 @@ export class AmcrestCamera {
   }
 
   private openTalkbackPost(contentType: string, body: PassThrough): void {
-    const url = this.client.urlFor(`/cgi-bin/audio.cgi?action=postAudio&httptype=singlepart&channel=${this.channel}`);
+    const url = this.client.urlFor(
+      `/cgi-bin/audio.cgi?action=postAudio&httptype=singlepart&channel=${this.channel}`,
+    );
     void digestFetch({
       url,
       username: this.storage.values.username,
@@ -212,7 +261,14 @@ export class AmcrestCamera {
   }
 
   private async detectCapabilities(): Promise<AmcrestCapabilities> {
-    const caps: AmcrestCapabilities = { deviceType: undefined, doorbell: false, ptz: false, ptzPan: false, ptzTilt: false, ptzZoom: false };
+    const caps: AmcrestCapabilities = {
+      deviceType: undefined,
+      doorbell: false,
+      ptz: false,
+      ptzPan: false,
+      ptzTilt: false,
+      ptzZoom: false,
+    };
     try {
       const info = await this.client.getSystemInfo();
       caps.deviceType = info.deviceType;
@@ -249,7 +305,11 @@ export class AmcrestCamera {
 
     if (this.capabilities.ptz) {
       this.ptz = new AmcrestPTZSensor(this.client, this.channel);
-      this.ptz.setCapabilities(this.capabilities.ptzPan, this.capabilities.ptzTilt, this.capabilities.ptzZoom);
+      this.ptz.setCapabilities(
+        this.capabilities.ptzPan,
+        this.capabilities.ptzTilt,
+        this.capabilities.ptzZoom,
+      );
       await this.cameraDevice.addSensor(this.ptz);
     }
   }
@@ -283,7 +343,10 @@ export class AmcrestCamera {
     }
     if (signal.aborted || this.stopped) return;
     this.eventReconnectStreak++;
-    const delay = Math.min(EVENT_RECONNECT_BASE_MS * 2 ** (this.eventReconnectStreak - 1), EVENT_RECONNECT_MAX_MS);
+    const delay = Math.min(
+      EVENT_RECONNECT_BASE_MS * 2 ** (this.eventReconnectStreak - 1),
+      EVENT_RECONNECT_MAX_MS,
+    );
     this.log.debug(`Reconnecting Amcrest event stream in ${delay}ms`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
@@ -328,17 +391,66 @@ export class AmcrestCamera {
 
   private createStorage(): DeviceStorage<AmcrestCameraStorage> {
     return this.cameraDevice.createStorage<AmcrestCameraStorage>([
-      { type: 'string', key: 'ip', title: 'IP Address', description: 'Camera IP address, e.g. 192.168.1.50', store: true, required: true },
-      { type: 'string', key: 'username', title: 'Username', description: 'Amcrest account username.', store: true, required: true },
-      { type: 'string', format: 'password', key: 'password', title: 'Password', description: 'Amcrest account password.', store: true, required: true },
-      { type: 'number', key: 'port', title: 'RTSP Port', description: 'RTSP port (default 554).', store: true, required: false, defaultValue: 554 },
-      { type: 'number', key: 'httpPort', title: 'HTTP Port', description: 'HTTP/CGI port (default 80).', store: true, required: false, defaultValue: 80 },
-      { type: 'number', key: 'channel', title: 'Channel', description: 'Camera channel (default 1).', store: true, required: false, defaultValue: 1 },
+      {
+        type: 'string',
+        key: 'ip',
+        title: 'IP Address',
+        description: 'Camera IP address, e.g. 192.168.1.50',
+        store: true,
+        required: true,
+      },
+      {
+        type: 'string',
+        key: 'username',
+        title: 'Username',
+        description: 'Amcrest account username.',
+        store: true,
+        required: true,
+      },
+      {
+        type: 'string',
+        format: 'password',
+        key: 'password',
+        title: 'Password',
+        description: 'Amcrest account password.',
+        store: true,
+        required: true,
+      },
+      {
+        type: 'number',
+        key: 'port',
+        title: 'RTSP Port',
+        description: 'RTSP port (default 554).',
+        store: true,
+        required: false,
+        defaultValue: 554,
+      },
+      {
+        type: 'number',
+        key: 'httpPort',
+        title: 'HTTP Port',
+        description: 'HTTP/CGI port (default 80).',
+        store: true,
+        required: false,
+        defaultValue: 80,
+      },
+      {
+        type: 'number',
+        key: 'channel',
+        title: 'Channel',
+        description: 'Camera channel (default 1).',
+        store: true,
+        required: false,
+        defaultValue: 1,
+      },
     ]);
   }
 }
 
-async function fetchPtzCaps(client: AmcrestClient, channel: number): Promise<{ ptz: boolean; pan: boolean; tilt: boolean; zoom: boolean }> {
+async function fetchPtzCaps(
+  client: AmcrestClient,
+  channel: number,
+): Promise<{ ptz: boolean; pan: boolean; tilt: boolean; zoom: boolean }> {
   // Routed through the authenticated client (digest auth) — a raw, unauthenticated
   // fetch here always gets a 401 from real devices and PTZ never gets detected.
   const text = await client.getPtzCaps(channel).catch(() => '');
