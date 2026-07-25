@@ -28,7 +28,9 @@ and npm records a provenance attestation.
 
 ## Cutting a release
 
-1. Bump `version` in `package.json` (and add a CHANGELOG entry if the repo keeps one).
+1. Bump `version` in `package.json` and add a matching `## <version>` entry to
+   `CHANGELOG.md`. **Required** — the workflow fails the release if the changelog
+   has no entry for the version being published.
 2. Commit to `main`.
 3. Tag and push:
    ```bash

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4
+
+- Add automated GitHub Actions publish pipeline (npm Trusted Publishing / OIDC). Verification release; no functional changes.
+
 ## 1.0.3
 
 - Update repo to standalone repo
