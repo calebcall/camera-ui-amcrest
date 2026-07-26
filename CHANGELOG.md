@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
 - Objects: report the real bounding box and camera-side track ID from smart events (`CrossLineDetection`, `CrossRegionDetection`, `FaceDetection`) instead of a full-frame placeholder, converting Dahua's fixed 0-8191 coordinate space to camera.ui's normalized 0-1 box. Payload-less codes (`VideoMotion`, `SmartMotionHuman`) still report full frame.
+- Detections now carry `trackId` from the camera's `Object.ObjectID`, so consumers can follow an object across events.
 
 ## 1.0.4
 
