@@ -372,7 +372,7 @@ export class AmcrestCamera {
         this.audio?.report(c.active);
         break;
       case 'object':
-        this.object?.report(c.category, c.active);
+        this.object?.report(c.category, c.active, c.detection);
         break;
       case 'doorbell':
         this.doorbell?.trigger();
