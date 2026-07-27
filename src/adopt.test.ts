@@ -19,8 +19,20 @@ test("builds a config with main+sub sources and snapshot on main", () => {
       firmwareVersion: "1.0",
     },
     streams: [
-      { role: "main", subtype: 0, codec: "h264", width: 1920, height: 1080 },
-      { role: "sub", subtype: 1, codec: "h265", width: 704, height: 480 },
+      {
+        role: "high-resolution",
+        subtype: 0,
+        codec: "h264",
+        width: 1920,
+        height: 1080,
+      },
+      {
+        role: "low-resolution",
+        subtype: 1,
+        codec: "h265",
+        width: 704,
+        height: 480,
+      },
     ],
   });
 
@@ -49,9 +61,53 @@ test("falls back to a single main source when only one stream is present", () =>
     channel: 1,
     info: {},
     streams: [
-      { role: "main", subtype: 0, codec: "h264", width: 1920, height: 1080 },
+      {
+        role: "high-resolution",
+        subtype: 0,
+        codec: "h264",
+        width: 1920,
+        height: 1080,
+      },
     ],
   });
   assert.equal(config.sources.length, 1);
   assert.equal(config.sources[0].useForSnapshot, false);
+});
+
+test("builds a source per stream when the camera serves three", () => {
+  const config = buildCameraConfig({
+    name: "Cam",
+    nativeId: "x",
+    ip: "10.0.0.1",
+    username: "a",
+    password: "b",
+    port: 554,
+    channel: 1,
+    info: {},
+    streams: [
+      { role: "high-resolution", subtype: 0, width: 2560, height: 1440 },
+      { role: "mid-resolution", subtype: 2, width: 1280, height: 720 },
+      { role: "low-resolution", subtype: 1, width: 640, height: 480 },
+    ],
+  });
+
+  assert.equal(config.sources.length, 3);
+  assert.deepEqual(
+    config.sources.map((s) => s.role),
+    ["high-resolution", "mid-resolution", "low-resolution"],
+  );
+  // Each source must point at its own RTSP subtype.
+  assert.deepEqual(
+    config.sources.map((s) => s.urls?.[0]?.match(/subtype=(\d)/)?.[1]),
+    ["0", "2", "1"],
+  );
+  // Only the high-resolution source is kept hot; the rest connect on demand.
+  assert.deepEqual(
+    config.sources.map((s) => s.hotMode),
+    [true, false, false],
+  );
+  assert.deepEqual(
+    config.sources.map((s) => s.name),
+    ["main", "extra2", "extra1"],
+  );
 });

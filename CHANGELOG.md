@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Streams: register every enabled stream the camera serves, not just main + the first substream. `ExtraFormat[0..2]` map to RTSP `subtype=1..3`; disabled slots are skipped. Roles are now assigned by resolution (largest → `high-resolution`, smallest → `low-resolution`, any third → `mid-resolution`) rather than by config position. If a camera serves more than three enabled streams, the extras are logged at adoption rather than dropped silently — camera.ui has only three streaming roles.
+- Streams: `MainFormat[1..3]` are deliberately never registered. They are per-trigger encoder profiles (general / motion / alarm) for the *same* `subtype=0` stream, so treating them as separate streams would register the same video several times.
+- Adoption now logs each registered stream with its role, subtype and resolution.
+
+Applies to newly adopted cameras; already-adopted cameras keep their stored source list until re-adopted.
+
 ## 1.2.0
 
 Event handling verified against real hardware captures for the first time; both captures are now regression fixtures.

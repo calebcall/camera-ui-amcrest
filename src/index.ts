@@ -274,9 +274,18 @@ export default class AmcrestPlugin
       httpPort,
     });
     const info = await client.getSystemInfo(); // throws 'not amcrest' if wrong device
-    const streams = await client.getStreams(channel);
+    const { streams, dropped } = await client.getStreams(channel);
     if (streams.length === 0) {
       throw new Error('No enabled video streams found on the device');
+    }
+    if (dropped.length > 0) {
+      // camera.ui has three streaming roles, so anything past the third-largest
+      // has nowhere to go. Say so rather than dropping it quietly.
+      this.logger.warn(
+        `Camera serves ${streams.length + dropped.length} enabled streams but camera.ui supports 3; ignoring ${dropped
+          .map((s) => `subtype=${s.subtype} (${s.width}x${s.height})`)
+          .join(', ')}`,
+      );
     }
 
     const name =
@@ -311,7 +320,9 @@ export default class AmcrestPlugin
       httpPort,
     });
     this.logger.log(
-      `Amcrest device adopted: ${name} (${streams.length} stream(s))`,
+      `Amcrest device adopted: ${name} (${streams
+        .map((s) => `${s.role} subtype=${s.subtype} ${s.width}x${s.height}`)
+        .join(', ')})`,
     );
     return config;
   }

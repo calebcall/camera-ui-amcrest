@@ -6,7 +6,7 @@ import { ptzCommandForVelocity } from './ptz-commands.js';
 import { buildRtspUrl } from './rtsp-url.js';
 import { parseSystemInfo } from './system-info.js';
 
-import type { AmcrestStream } from './encode-config.js';
+import type { AmcrestStreamSet } from './encode-config.js';
 import type { PtzVelocity } from './ptz-commands.js';
 import type { AmcrestSystemInfo } from './system-info.js';
 
@@ -83,7 +83,7 @@ export class AmcrestClient {
     return parseSystemInfo(await res.text());
   }
 
-  async getStreams(channel: number): Promise<AmcrestStream[]> {
+  async getStreams(channel: number): Promise<AmcrestStreamSet> {
     const res = await this.fetch(
       '/cgi-bin/configManager.cgi?action=getConfig&name=Encode',
     );
