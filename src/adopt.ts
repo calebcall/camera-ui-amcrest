@@ -21,14 +21,12 @@ export interface BuildCameraConfigInput {
 }
 
 export function buildCameraConfig(input: BuildCameraConfigInput): CameraConfig {
-  const main = input.streams.find((s) => s.role === 'main') ?? input.streams[0];
-  const sub = input.streams.find((s) => s.role === 'sub');
-
-  const sources: CameraConfig['sources'] = [];
-  if (main) {
-    sources.push({
-      name: 'main',
-      role: 'high-resolution',
+  // One source per stream the camera actually serves, ordered high to low as
+  // parseEncodeConfig ranked them.
+  const sources: CameraConfig['sources'] = input.streams.map(
+    (stream, index) => ({
+      name: stream.subtype === 0 ? 'main' : `extra${stream.subtype}`,
+      role: stream.role,
       urls: [
         buildRtspUrl({
           ip: input.ip,
@@ -36,7 +34,7 @@ export function buildCameraConfig(input: BuildCameraConfigInput): CameraConfig {
           password: input.password,
           port: input.port,
           channel: input.channel,
-          subtype: main.subtype,
+          subtype: stream.subtype,
         }),
       ],
       // Snapshots are served by the plugin's SnapshotInterface (snapshot.cgi, a
@@ -45,29 +43,12 @@ export function buildCameraConfig(input: BuildCameraConfigInput): CameraConfig {
       // competes with live view for the camera's limited connections and fails
       // under load (ffmpeg "exit status 69/183").
       useForSnapshot: false,
-      hotMode: true,
-      preload: true,
-    });
-  }
-  if (sub) {
-    sources.push({
-      name: 'sub',
-      role: 'low-resolution',
-      urls: [
-        buildRtspUrl({
-          ip: input.ip,
-          username: input.username,
-          password: input.password,
-          port: input.port,
-          channel: input.channel,
-          subtype: sub.subtype,
-        }),
-      ],
-      useForSnapshot: false,
-      hotMode: false,
-      preload: false,
-    });
-  }
+      // Only the primary stream is worth holding open; the lower-resolution
+      // ones are pulled on demand by detectors and playback.
+      hotMode: index === 0,
+      preload: index === 0,
+    }),
+  );
 
   return {
     name: input.name,
