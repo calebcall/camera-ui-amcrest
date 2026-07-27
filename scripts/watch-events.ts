@@ -58,13 +58,12 @@ function describe(blob: string): string | undefined {
 
   const parts = [c.category, c.active ? 'active' : 'clear'];
   if (c.momentary) parts.push('momentary');
-  if (c.detection) {
-    const b = c.detection.box;
+  for (const d of c.detections ?? []) {
+    const b = d.box;
     parts.push(
       `box=[${b.x.toFixed(3)}, ${b.y.toFixed(3)}, ${b.width.toFixed(3)}, ${b.height.toFixed(3)}]`,
     );
-    if (c.detection.trackId !== undefined)
-      parts.push(`track=${c.detection.trackId}`);
+    if (d.trackId !== undefined) parts.push(`track=${d.trackId}`);
   }
   return `${head}  -> object ${parts.join(' ')}`;
 }

@@ -8,6 +8,7 @@ import {
   extractCompleteEvents,
   splitEventMultipart,
 } from "./event-reader.js";
+import { classifyAmcrestEvent } from "./classify.js";
 import { parseAmcrestEvent } from "./events.js";
 import { UnhandledCodeTracker } from "./unhandled-codes.js";
 
@@ -146,4 +147,33 @@ test("handles a real capture: heartbeats dropped, every event recovered once", (
 test("mutes the housekeeping codes seen in a real capture", () => {
   const tracker = new UnhandledCodeTracker();
   assert.equal(tracker.shouldReport("VideoMotionInfo"), false);
+});
+
+test("classifies a smart-motion vehicle end-to-end from a real capture", () => {
+  const capture = readFileSync(
+    fileURLToPath(
+      new URL("../fixtures/event-stream-smartmotion.txt", import.meta.url),
+    ),
+    "utf8",
+  );
+  const { blobs } = extractCompleteEvents(capture, "myboundary");
+  const events = blobs.map((b) => parseAmcrestEvent(b)!);
+  assert.deepEqual(
+    events.map((e) => e.code),
+    ["SmartMotionVehicle", "VideoMotion", "VideoMotionInfo", "VideoMotionInfo"],
+  );
+
+  const c = classifyAmcrestEvent(events[0]) as {
+    category: string;
+    active: boolean;
+    detections?: { box: { width: number }; trackId?: number }[];
+  };
+  assert.equal(c.category, "vehicle");
+  assert.equal(c.active, true);
+  assert.equal(c.detections?.length, 1, "the Rect must survive the split");
+  assert.equal(c.detections?.[0].trackId, 2);
+  assert.ok(
+    c.detections![0].box.width > 0 && c.detections![0].box.width < 1,
+    "a real box, not the full-frame placeholder",
+  );
 });

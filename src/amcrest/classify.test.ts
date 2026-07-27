@@ -33,16 +33,11 @@ test("classifies audio mutation", () => {
   );
 });
 
-test("classifies smart human and vehicle", () => {
+test("classifies smart human", () => {
   assert.deepEqual(
     classifyAmcrestEvent({ code: "SmartMotionHuman", action: "Start" }),
     { kind: "object", category: "person", active: true },
   );
-  assert.deepEqual(classifyAmcrestEvent({ code: "Vehicle", action: "Start" }), {
-    kind: "object",
-    category: "vehicle",
-    active: true,
-  });
 });
 
 test("classifies the documented SmartMotionVehicle code", () => {
@@ -83,7 +78,7 @@ test("converts the Dahua 0-8191 bounding box to a normalized box", () => {
   };
   const c = classifyAmcrestEvent(ev);
   assert.equal(c?.kind, "object");
-  const detection = (c as { detection?: AmcrestDetection }).detection;
+  const detection = (c as { detections?: AmcrestDetection[] }).detections?.[0];
   assert.ok(detection, "expected a detection derived from the payload");
   assert.equal(detection.trackId, 863);
   assertClose(detection.box.x, 0.348675375);
@@ -104,8 +99,8 @@ test("clamps bounding boxes that overshoot the coordinate space", () => {
     },
   };
   const detection = (
-    classifyAmcrestEvent(ev) as { detection?: AmcrestDetection }
-  ).detection;
+    classifyAmcrestEvent(ev) as { detections?: AmcrestDetection[] }
+  ).detections?.[0];
   assert.ok(detection);
   assert.equal(detection.box.x, 0);
   assert.equal(detection.box.y, 0);
@@ -129,7 +124,7 @@ test("derives a box end-to-end from a real cross-region event blob", () => {
   const ev = parseAmcrestEvent(blob);
   assert.ok(ev);
   const c = classifyAmcrestEvent(ev);
-  const detection = (c as { detection?: AmcrestDetection }).detection;
+  const detection = (c as { detections?: AmcrestDetection[] }).detections?.[0];
   assert.ok(detection);
   assert.equal(detection.trackId, 863);
   // Center of the normalized box must match the payload's own Center field.
@@ -175,11 +170,11 @@ test("activates on a real FaceDetection Pulse blob", () => {
   const c = classifyAmcrestEvent(ev) as {
     active: boolean;
     momentary?: boolean;
-    detection?: AmcrestDetection;
+    detections?: AmcrestDetection[];
   };
   assert.equal(c.active, true, "a Pulse must not clear the sensor");
   assert.equal(c.momentary, true);
-  assert.equal(c.detection?.trackId, 94);
+  assert.equal(c.detections?.[0].trackId, 94);
 });
 
 test("classifies amcrest doorbell invite", () => {
@@ -192,6 +187,57 @@ test("classifies amcrest doorbell invite", () => {
 test("ignores unrelated events", () => {
   assert.equal(
     classifyAmcrestEvent({ code: "NTPAdjustTime", action: "Start" }),
+    undefined,
+  );
+});
+
+test("reads the SmartMotion object[]/Rect payload shape", () => {
+  const blob = `Code=SmartMotionVehicle;action=Start;index=0;data=${readFileSync(
+    fileURLToPath(
+      new URL("../fixtures/smart-motion-vehicle.json", import.meta.url),
+    ),
+    "utf8",
+  )}`;
+  const ev = parseAmcrestEvent(blob);
+  assert.ok(ev);
+  const c = classifyAmcrestEvent(ev) as {
+    category: string;
+    active: boolean;
+    detections?: AmcrestDetection[];
+  };
+
+  assert.equal(c.category, "vehicle");
+  assert.equal(c.active, true);
+  assert.equal(c.detections?.length, 1);
+  assert.equal(c.detections?.[0].trackId, 2, "VehicleID is the track id here");
+  assertClose(c.detections![0].box.x, 0.474667318);
+  assertClose(c.detections![0].box.y, 0.0908314);
+  assertClose(c.detections![0].box.width, 0.042973996);
+  assertClose(c.detections![0].box.height, 0.047857404);
+});
+
+test("reads every object in a multi-object SmartMotion payload", () => {
+  const c = classifyAmcrestEvent({
+    code: "SmartMotionHuman",
+    action: "Start",
+    data: {
+      object: [
+        { Rect: [0, 0, 8191, 8191], HumanID: 7 },
+        { Rect: [0, 0, 4095, 4095], HumanID: 8 },
+      ],
+    },
+  }) as { detections?: AmcrestDetection[] };
+
+  assert.equal(c.detections?.length, 2);
+  assert.deepEqual(
+    c.detections?.map((d) => d.trackId),
+    [7, 8],
+  );
+});
+
+test("no longer treats the speculative 'Vehicle' code as an event", () => {
+  assert.equal(
+    classifyAmcrestEvent({ code: "Vehicle", action: "Start" }),
     undefined,
   );
 });

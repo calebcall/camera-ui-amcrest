@@ -1,0 +1,10 @@
+{
+   "RegionName" : [ "Area1" ],
+   "WindowId" : [ 0 ],
+   "object" : [
+      {
+         "Rect" : [ 3888, 744, 4240, 1136 ],
+         "VehicleID" : 2
+      }
+   ]
+}

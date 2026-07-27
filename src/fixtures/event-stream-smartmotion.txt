@@ -1,0 +1,42 @@
+--myboundary
+Content-Type: text/plain
+Content-Length: 9
+
+Heartbeat
+--myboundary
+Content-Type: text/plain
+Content-Length: 223
+
+Code=SmartMotionVehicle;action=Start;index=0;data={
+   "RegionName" : [ "Area1" ],
+   "WindowId" : [ 0 ],
+   "object" : [
+      {
+         "Rect" : [ 3888, 744, 4240, 1136 ],
+         "VehicleID" : 2
+      }
+   ]
+}
+--myboundary
+Content-Type: text/plain
+Content-Length: 78
+
+Code=VideoMotion;action=Start;index=0;data={
+   "SmartMotionEnable" : true
+}
+--myboundary
+Content-Type: text/plain
+Content-Length: 41
+
+Code=VideoMotionInfo;action=State;index=0
+--myboundary
+Content-Type: text/plain
+Content-Length: 41
+
+Code=VideoMotionInfo;action=State;index=0
+--myboundary
+Content-Type: text/plain
+Content-Length: 9
+
+Heartbeat
+--myboundary

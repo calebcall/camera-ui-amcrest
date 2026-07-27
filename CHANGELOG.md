@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Objects: handle the documented `SmartMotionVehicle` event code. The previous `Vehicle` code is not in the Dahua CGI spec and may never have fired; it is kept as an alias.
+- Objects: handle the documented `SmartMotionVehicle` event code, **confirmed against real hardware**. The previous `Vehicle` code was never emitted by the device and has been removed.
+- Objects: read the SmartMotion payload shape (`object[]` with `Rect` and `VehicleID`/`HumanID`), which differs from the `Object.BoundingBox` shape used by the cross-line/cross-region/face events. Smart-motion detections previously fell back to a full-frame box even though the camera supplied real coordinates.
+- Objects: report every object in an event, not just the first — a single event can describe several.
 - Events: log each unrecognized event code once per camera at debug level, so detections the plugin doesn't map are visible instead of silently dropped. Chatty housekeeping codes (`VideoMotionInfo`, `NTPAdjustTime`, …) are muted.
 - Add `npm run watch-events` to tail a camera's event stream and print how each event is classified. See the README's troubleshooting section.
 - Tests: add a regression fixture captured from real hardware covering heartbeat filtering and multipart reassembly.

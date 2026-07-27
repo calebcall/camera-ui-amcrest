@@ -11,7 +11,8 @@ const FULL_FRAME = { x: 0, y: 0, width: 1, height: 1 };
 const DEFAULT_PULSE_TIMEOUT_MS = 5000;
 
 interface ActiveCategory {
-  detection?: AmcrestDetection;
+  /** Every object the triggering event described; empty when it carried none. */
+  detections: AmcrestDetection[];
   /** Set only for pulse-activated categories; Start/Stop categories have none. */
   timer?: NodeJS.Timeout;
 }
@@ -30,11 +31,11 @@ export class AmcrestObjectSensor extends ObjectSensor {
   report(
     category: ObjectCategory,
     detected: boolean,
-    detection?: AmcrestDetection,
+    detections: AmcrestDetection[] = [],
   ): void {
     this.clearTimer(category);
     if (detected) {
-      this.active.set(category, { detection });
+      this.active.set(category, { detections });
     } else {
       this.active.delete(category);
     }
@@ -46,7 +47,7 @@ export class AmcrestObjectSensor extends ObjectSensor {
    * and line crossing on some firmwares). These never get a matching `Stop`, so
    * the category is expired on a timer instead. A repeat pulse resets it.
    */
-  pulse(category: ObjectCategory, detection?: AmcrestDetection): void {
+  pulse(category: ObjectCategory, detections: AmcrestDetection[] = []): void {
     this.clearTimer(category);
     const timer = setTimeout(() => {
       const entry = this.active.get(category);
@@ -57,7 +58,7 @@ export class AmcrestObjectSensor extends ObjectSensor {
       this.emit();
     }, this.pulseTimeoutMs);
     timer.unref?.();
-    this.active.set(category, { detection, timer });
+    this.active.set(category, { detections, timer });
     this.emit();
   }
 
@@ -78,19 +79,20 @@ export class AmcrestObjectSensor extends ObjectSensor {
       return;
     }
 
-    // Smart events (CrossLine/CrossRegion/FaceDetection) carry a real box; the
-    // plain motion codes carry no coordinates, so those fall back to full frame.
-    // Confidence is not usable across models (0 on some, 0-100 on others), so
-    // it is reported as certain rather than mapped.
-    const detections: TrackedDetection[] = Array.from(this.active).map(
-      ([label, entry]) => ({
-        label,
-        confidence: 1,
-        box: entry.detection?.box ?? FULL_FRAME,
-        ...(entry.detection?.trackId !== undefined
-          ? { trackId: entry.detection.trackId }
-          : {}),
-      }),
+    // Smart events carry a real box per object; codes that carry no coordinates
+    // at all (e.g. VideoMotion) fall back to a single full-frame detection so
+    // the category still shows up as a label. Confidence is not usable across
+    // models (0 on some, 0-100 on others), so it is reported as certain.
+    const detections: TrackedDetection[] = Array.from(this.active).flatMap(
+      ([label, entry]) =>
+        entry.detections.length > 0
+          ? entry.detections.map((d) => ({
+              label,
+              confidence: 1,
+              box: d.box,
+              ...(d.trackId !== undefined ? { trackId: d.trackId } : {}),
+            }))
+          : [{ label, confidence: 1, box: FULL_FRAME }],
     );
     this.reportDetections(true, detections);
   }

@@ -383,9 +383,9 @@ export class AmcrestCamera {
         break;
       case 'object':
         if (c.momentary) {
-          this.object?.pulse(c.category, c.detection);
+          this.object?.pulse(c.category, c.detections);
         } else {
-          this.object?.report(c.category, c.active, c.detection);
+          this.object?.report(c.category, c.active, c.detections);
         }
         break;
       case 'doorbell':
