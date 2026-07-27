@@ -45,6 +45,17 @@ test("classifies smart human and vehicle", () => {
   });
 });
 
+test("classifies the documented SmartMotionVehicle code", () => {
+  assert.deepEqual(
+    classifyAmcrestEvent({ code: "SmartMotionVehicle", action: "Start" }),
+    { kind: "object", category: "vehicle", active: true },
+  );
+  assert.deepEqual(
+    classifyAmcrestEvent({ code: "SmartMotionVehicle", action: "Stop" }),
+    { kind: "object", category: "vehicle", active: false },
+  );
+});
+
 test("classifies cross-region by ObjectType", () => {
   const ev = {
     code: "CrossRegionDetection",

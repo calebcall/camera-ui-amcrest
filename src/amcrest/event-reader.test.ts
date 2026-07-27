@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
-import { extractCompleteEvents, splitEventMultipart } from "./event-reader.js";
+import {
+  detectBoundary,
+  extractCompleteEvents,
+  splitEventMultipart,
+} from "./event-reader.js";
+import { parseAmcrestEvent } from "./events.js";
+import { UnhandledCodeTracker } from "./unhandled-codes.js";
 
 const BODY = [
   "--myboundary",
@@ -87,4 +95,55 @@ test("extractCompleteEvents: does not double-dispatch an event across chunk boun
   assert.equal(second.blobs.length, 1);
   assert.ok(second.blobs[0].includes("Code=E2;action=Start"));
   assert.ok(!second.blobs.some((b) => b.includes("E1")));
+});
+
+test("detects the multipart boundary from the stream preamble", () => {
+  assert.equal(
+    detectBoundary("--myboundary\r\nContent-Type: text/plain\r\n\r\nCode=X"),
+    "myboundary",
+  );
+});
+
+test("strips the leading dashes Amcrest sometimes doubles up", () => {
+  assert.equal(detectBoundary("----fooBoundary\r\n"), "fooBoundary");
+});
+
+test("returns undefined before a boundary has arrived", () => {
+  assert.equal(detectBoundary("HTTP/1.1 200 OK\r\n"), undefined);
+});
+
+test("handles a real capture: heartbeats dropped, every event recovered once", () => {
+  const capture = readFileSync(
+    fileURLToPath(
+      new URL("../fixtures/event-stream-capture.txt", import.meta.url),
+    ),
+    "utf8",
+  );
+  const { blobs } = extractCompleteEvents(capture, "myboundary");
+  const events = blobs.map((b) => parseAmcrestEvent(b)!);
+
+  assert.equal(
+    events.length,
+    10,
+    "5 heartbeats must be dropped, 10 events kept",
+  );
+  assert.deepEqual(
+    events.filter((e) => e.code === "VideoMotion").map((e) => e.action),
+    ["Start", "Stop", "Start", "Stop"],
+  );
+  assert.equal(
+    events.filter((e) => e.code === "VideoMotionInfo").length,
+    6,
+    "VideoMotionInfo is the chatty code the tracker mutes",
+  );
+  // The payload must survive the multipart split intact.
+  const start = events.find((e) => e.code === "VideoMotion")!;
+  assert.deepEqual((start.data as { RegionName: string[] }).RegionName, [
+    "Area1",
+  ]);
+});
+
+test("mutes the housekeeping codes seen in a real capture", () => {
+  const tracker = new UnhandledCodeTracker();
+  assert.equal(tracker.shouldReport("VideoMotionInfo"), false);
 });

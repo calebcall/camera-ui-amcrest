@@ -1,0 +1,92 @@
+--myboundary
+Content-Type: text/plain
+Content-Length: 9
+
+Heartbeat
+--myboundary
+Content-Type: text/plain
+Content-Length: 41
+
+Code=VideoMotionInfo;action=State;index=0
+--myboundary
+Content-Type: text/plain
+Content-Length: 129
+
+Code=VideoMotion;action=Start;index=0;data={
+   "Id" : [ 0 ],
+   "RegionName" : [ "Area1" ],
+   "SmartMotionEnable" : false
+}
+--myboundary
+Content-Type: text/plain
+Content-Length: 41
+
+Code=VideoMotionInfo;action=State;index=0
+--myboundary
+Content-Type: text/plain
+Content-Length: 9
+
+Heartbeat
+--myboundary
+Content-Type: text/plain
+Content-Length: 128
+
+Code=VideoMotion;action=Stop;index=0;data={
+   "Id" : [ 0 ],
+   "RegionName" : [ "Area1" ],
+   "SmartMotionEnable" : false
+}
+--myboundary
+Content-Type: text/plain
+Content-Length: 41
+
+Code=VideoMotionInfo;action=State;index=0
+--myboundary
+Content-Type: text/plain
+Content-Length: 129
+
+Code=VideoMotion;action=Start;index=0;data={
+   "Id" : [ 0 ],
+   "RegionName" : [ "Area1" ],
+   "SmartMotionEnable" : false
+}
+--myboundary
+Content-Type: text/plain
+Content-Length: 41
+
+Code=VideoMotionInfo;action=State;index=0
+--myboundary
+Content-Type: text/plain
+Content-Length: 9
+
+Heartbeat
+--myboundary
+Content-Type: text/plain
+Content-Length: 41
+
+Code=VideoMotionInfo;action=State;index=0
+--myboundary
+Content-Type: text/plain
+Content-Length: 41
+
+Code=VideoMotionInfo;action=State;index=0
+--myboundary
+Content-Type: text/plain
+Content-Length: 9
+
+Heartbeat
+--myboundary
+Content-Type: text/plain
+Content-Length: 128
+
+Code=VideoMotion;action=Stop;index=0;data={
+   "Id" : [ 0 ],
+   "RegionName" : [ "Area1" ],
+   "SmartMotionEnable" : false
+}
+--myboundary
+Content-Type: text/plain
+Content-Length: 9
+
+Heartbeat
+--myboundary

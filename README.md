@@ -42,6 +42,33 @@ For Amcrest doorbells, the plugin requires the device's local **admin** account 
 
 This is **not** the same as your `Amcrest Smart Home` cloud account login. The cloud account uses an email address and is only used to manage the device from the mobile app; it cannot be used to authenticate directly against the device's CGI API. If you don't remember the `admin` password, it's the one you set the first time you configured the doorbell (before adding it to the cloud app).
 
+## Troubleshooting events
+
+If a camera-side detection (person, vehicle, face, line crossing) isn't showing up in camera.ui, the likely cause is an event code this plugin doesn't recognize yet — firmware varies in which codes it emits.
+
+Enable debug logging in camera.ui and look for lines like:
+
+```
+Unhandled Amcrest event code: ParkingDetection (action=Start) — please report it at ...
+```
+
+Each unrecognized code is logged once per camera. If you see one that should map to a detection, please open an issue with that line.
+
+To watch the raw stream directly from a checkout of this repo:
+
+```bash
+npm run watch-events -- --ip 192.168.1.50 --user admin --pass secret
+```
+
+Then trigger the event on the camera (walk through frame, drive past, ring the doorbell). Each event prints with how the plugin classifies it:
+
+```
+14:02:31  CrossRegionDetection     action=Start   -> object person active box=[0.349, 0.156, 0.125, 0.440] track=863
+14:02:44  ParkingDetection         action=Start   -> UNHANDLED
+```
+
+Credentials can also be supplied as `AMCREST_IP` / `AMCREST_USER` / `AMCREST_PASS`.
+
 ## Known limitations / v2
 
 The following are deferred to a future release:

@@ -18,7 +18,8 @@
     "publish:alpha": "npm i --save --force && npm run bundle && cui publish --alpha",
     "publish:beta": "npm i --save --force && npm run bundle && cui publish --beta",
     "publish:latest": "npm i --save --force && npm run bundle && cui publish --latest",
-    "update": "updates --update ./"
+    "update": "updates --update ./",
+    "watch-events": "node --import tsx scripts/watch-events.ts"
   },
   "dependencies": {
     "@seydx/rtsp": "^1.0.5"

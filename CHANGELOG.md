@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Objects: handle the documented `SmartMotionVehicle` event code. The previous `Vehicle` code is not in the Dahua CGI spec and may never have fired; it is kept as an alias.
+- Events: log each unrecognized event code once per camera at debug level, so detections the plugin doesn't map are visible instead of silently dropped. Chatty housekeeping codes (`VideoMotionInfo`, `NTPAdjustTime`, …) are muted.
+- Add `npm run watch-events` to tail a camera's event stream and print how each event is classified. See the README's troubleshooting section.
+- Tests: add a regression fixture captured from real hardware covering heartbeat filtering and multipart reassembly.
+
 ## 1.1.1
 
 - Objects: handle `action=Pulse` smart events. Firmwares that emit face detections (and, on some models, line crossings) as an instantaneous Pulse with no matching `Stop` were previously **clearing** the object sensor instead of triggering it, so those detections never surfaced. A pulse now activates the category and self-clears after 5s; a repeat pulse extends the window, and a `Start` takes ownership of the category so its timer can't clear a held detection.

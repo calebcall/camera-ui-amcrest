@@ -110,6 +110,9 @@ export function classifyAmcrestEvent(
       return { kind: 'audio', active };
     case 'SmartMotionHuman':
       return objectResult('person', ev);
+    // `Vehicle` is not in the Dahua CGI spec; kept as an alias alongside the
+    // documented code because an earlier release shipped it. See #6.
+    case 'SmartMotionVehicle':
     case 'Vehicle':
       return objectResult('vehicle', ev);
     case 'FaceDetection':
