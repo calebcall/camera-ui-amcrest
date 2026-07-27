@@ -126,6 +126,51 @@ test("derives a box end-to-end from a real cross-region event blob", () => {
   assertClose(detection.box.y + detection.box.height / 2, 3080 / 8191);
 });
 
+test("treats a face detection Pulse as a momentary activation", () => {
+  assert.deepEqual(
+    classifyAmcrestEvent({ code: "FaceDetection", action: "Pulse" }),
+    { kind: "object", category: "person", active: true, momentary: true },
+  );
+});
+
+test("treats a line-crossing Pulse as a momentary activation", () => {
+  const c = classifyAmcrestEvent({
+    code: "CrossLineDetection",
+    action: "Pulse",
+    data: { Object: { ObjectType: "Human" } },
+  });
+  assert.deepEqual(c, {
+    kind: "object",
+    category: "person",
+    active: true,
+    momentary: true,
+  });
+});
+
+test("does not mark Start/Stop object events as momentary", () => {
+  assert.deepEqual(
+    classifyAmcrestEvent({ code: "FaceDetection", action: "Stop" }),
+    { kind: "object", category: "person", active: false },
+  );
+});
+
+test("activates on a real FaceDetection Pulse blob", () => {
+  const blob = `Code=FaceDetection;action=Pulse;index=0;data=${readFileSync(
+    fileURLToPath(new URL("../fixtures/face-detected.json", import.meta.url)),
+    "utf8",
+  )}`;
+  const ev = parseAmcrestEvent(blob);
+  assert.ok(ev);
+  const c = classifyAmcrestEvent(ev) as {
+    active: boolean;
+    momentary?: boolean;
+    detection?: AmcrestDetection;
+  };
+  assert.equal(c.active, true, "a Pulse must not clear the sensor");
+  assert.equal(c.momentary, true);
+  assert.equal(c.detection?.trackId, 94);
+});
+
 test("classifies amcrest doorbell invite", () => {
   assert.deepEqual(
     classifyAmcrestEvent({ code: "_DoTalkAction_", action: "Invite" }),
