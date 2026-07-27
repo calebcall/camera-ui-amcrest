@@ -53,10 +53,9 @@ test("reports the payload box and track id when the event supplies one", () => {
   const sensor = new AmcrestObjectSensor();
   const calls = observe(sensor);
 
-  sensor.report("person", true, {
-    box: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
-    trackId: 863,
-  });
+  sensor.report("person", true, [
+    { box: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 }, trackId: 863 },
+  ]);
 
   assert.deepEqual(calls[0].detections, [
     {
@@ -72,9 +71,9 @@ test("keeps each category's own box when several are active", () => {
   const sensor = new AmcrestObjectSensor();
   const calls = observe(sensor);
 
-  sensor.report("person", true, {
-    box: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
-  });
+  sensor.report("person", true, [
+    { box: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } },
+  ]);
   sensor.report("vehicle", true);
 
   assert.deepEqual(calls[1].detections[0].box, {
@@ -90,9 +89,9 @@ test("forgets a stale box once the category clears and returns without one", () 
   const sensor = new AmcrestObjectSensor();
   const calls = observe(sensor);
 
-  sensor.report("person", true, {
-    box: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
-  });
+  sensor.report("person", true, [
+    { box: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } },
+  ]);
   sensor.report("person", false);
   sensor.report("person", true);
 
@@ -106,7 +105,9 @@ test("a pulse activates the category and clears itself after the timeout", (t) =
   const sensor = new AmcrestObjectSensor(5000);
   const calls = observe(sensor);
 
-  sensor.pulse("person", { box: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } });
+  sensor.pulse("person", [
+    { box: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } },
+  ]);
   assert.equal(calls[0].active, true);
   assert.deepEqual(calls[0].detections[0].box, {
     x: 0.1,
@@ -184,4 +185,24 @@ test("destroy cancels pending pulse timers", (t) => {
   t.mock.timers.tick(10_000);
 
   assert.equal(calls.length, 1, "no report should fire after destroy");
+});
+
+test("reports one detection per object when an event carries several", () => {
+  const sensor = new AmcrestObjectSensor();
+  const calls = observe(sensor);
+
+  sensor.report("vehicle", true, [
+    { box: { x: 0.1, y: 0.1, width: 0.1, height: 0.1 }, trackId: 2 },
+    { box: { x: 0.5, y: 0.5, width: 0.1, height: 0.1 }, trackId: 3 },
+  ]);
+
+  assert.equal(calls[0].detections.length, 2);
+  assert.deepEqual(
+    calls[0].detections.map((d) => d.trackId),
+    [2, 3],
+  );
+  assert.deepEqual(
+    calls[0].detections.map((d) => d.label),
+    ["vehicle", "vehicle"],
+  );
 });

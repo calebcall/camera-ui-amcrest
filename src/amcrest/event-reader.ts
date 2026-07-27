@@ -18,6 +18,16 @@ function cleanEventSection(section: string): string | undefined {
   return cleaned.includes('Code=') ? cleaned : undefined;
 }
 
+/**
+ * Reads the multipart boundary out of the stream preamble. Amcrest firmware is
+ * inconsistent about how many leading dashes it writes, so they are stripped.
+ * Returns undefined until enough of the stream has arrived to see one.
+ */
+export function detectBoundary(buffer: string): string | undefined {
+  const m = /--([A-Za-z0-9'()+_,\-./:=? ]+)\r?\n/.exec(buffer);
+  return m ? m[1].trim().replace(/^-+/, '') : undefined;
+}
+
 export function splitEventMultipart(chunk: string, boundary: string): string[] {
   const marker = `--${boundary}`;
   const spaced = `-- ${boundary}`;

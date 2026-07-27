@@ -1,7 +1,7 @@
 {
   "displayName": "Amcrest",
   "name": "@calebcall/camera-ui-amcrest",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Integrates Amcrest and Dahua-compatible IP cameras, doorbells and PTZ cameras into camera.ui via their native CGI API, with discovery, live streaming, two-way audio, PTZ, and motion, object, audio and doorbell events.",
   "author": "calebcall (https://github.com/calebcall/camera-ui-amcrest)",
   "type": "module",
@@ -18,7 +18,8 @@
     "publish:alpha": "npm i --save --force && npm run bundle && cui publish --alpha",
     "publish:beta": "npm i --save --force && npm run bundle && cui publish --beta",
     "publish:latest": "npm i --save --force && npm run bundle && cui publish --latest",
-    "update": "updates --update ./"
+    "update": "updates --update ./",
+    "watch-events": "node --import tsx scripts/watch-events.ts"
   },
   "dependencies": {
     "@seydx/rtsp": "^1.0.5"

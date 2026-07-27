@@ -6,9 +6,13 @@ import { AmcrestClient } from './amcrest/api.js';
 import { classifyAmcrestEvent } from './amcrest/classify.js';
 import { classifyDevice } from './amcrest/device.js';
 import { digestFetch } from './amcrest/digest-auth.js';
-import { extractCompleteEvents } from './amcrest/event-reader.js';
+import {
+  detectBoundary,
+  extractCompleteEvents,
+} from './amcrest/event-reader.js';
 import { parseAmcrestEvent } from './amcrest/events.js';
 import { selectTalkbackTarget } from './amcrest/talkback.js';
+import { UnhandledCodeTracker } from './amcrest/unhandled-codes.js';
 import {
   AmcrestAudioSensor,
   AmcrestDoorbellTrigger,
@@ -39,6 +43,7 @@ const BACKCHANNEL_ADVERTISE = {
   clockRate: 8000,
   channels: 1,
 } as const;
+const ISSUES_URL = 'https://github.com/calebcall/camera-ui-amcrest/issues';
 const EVENT_RECONNECT_BASE_MS = 2000;
 const EVENT_RECONNECT_MAX_MS = 30000;
 
@@ -76,6 +81,7 @@ export class AmcrestCamera {
 
   private eventAbort?: AbortController;
   private eventReconnectStreak = 0;
+  private readonly unhandledCodes = new UnhandledCodeTracker();
   private reconnectTimer?: NodeJS.Timeout;
   private stopped = false;
 
@@ -331,7 +337,7 @@ export class AmcrestCamera {
       // Amcrest streams a multipart body; we scan the running buffer for complete boundary blocks.
       for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
         buffer += decoder.decode(chunk, { stream: true });
-        const boundary = this.detectBoundary(buffer);
+        const boundary = detectBoundary(buffer);
         if (!boundary) continue;
         const { blobs, rest } = extractCompleteEvents(buffer, boundary);
         for (const blob of blobs) this.dispatchEvent(blob);
@@ -355,16 +361,19 @@ export class AmcrestCamera {
     }, delay);
   }
 
-  private detectBoundary(buffer: string): string | undefined {
-    const m = /--([A-Za-z0-9'()+_,\-./:=? ]+)\r?\n/.exec(buffer);
-    return m ? m[1].trim().replace(/^-+/, '') : undefined;
-  }
-
   private dispatchEvent(blob: string): void {
     const ev = parseAmcrestEvent(blob);
     if (!ev) return;
     const c = classifyAmcrestEvent(ev);
-    if (!c) return;
+    if (!c) {
+      // Log each unknown code once so event gaps are visible instead of silent.
+      if (this.unhandledCodes.shouldReport(ev.code)) {
+        this.log.debug(
+          `Unhandled Amcrest event code: ${ev.code} (action=${ev.action}) — please report it at ${ISSUES_URL}`,
+        );
+      }
+      return;
+    }
     switch (c.kind) {
       case 'motion':
         this.motion?.reportDetections(c.active);
@@ -374,9 +383,9 @@ export class AmcrestCamera {
         break;
       case 'object':
         if (c.momentary) {
-          this.object?.pulse(c.category, c.detection);
+          this.object?.pulse(c.category, c.detections);
         } else {
-          this.object?.report(c.category, c.active, c.detection);
+          this.object?.report(c.category, c.active, c.detections);
         }
         break;
       case 'doorbell':

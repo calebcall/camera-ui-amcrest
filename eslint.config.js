@@ -32,7 +32,9 @@ export default [
       globals: { ...globals.node },
       parser: tsParser,
       parserOptions: {
-        projectService: true,
+        // scripts/ is dev tooling, outside the build tsconfig — lint it with the
+        // default project so type-aware rules still apply.
+        projectService: { allowDefaultProject: ['scripts/*.ts'] },
         tsconfigRootDir: import.meta.dirname,
       },
     },
