@@ -100,3 +100,88 @@ test("forgets a stale box once the category clears and returns without one", () 
   assert.deepEqual(last.detections[0].box, FULL_FRAME);
   assert.equal(last.detections[0].trackId, undefined);
 });
+
+test("a pulse activates the category and clears itself after the timeout", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const sensor = new AmcrestObjectSensor(5000);
+  const calls = observe(sensor);
+
+  sensor.pulse("person", { box: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } });
+  assert.equal(calls[0].active, true);
+  assert.deepEqual(calls[0].detections[0].box, {
+    x: 0.1,
+    y: 0.1,
+    width: 0.2,
+    height: 0.2,
+  });
+
+  t.mock.timers.tick(4999);
+  assert.equal(calls.length, 1, "must not clear before the timeout elapses");
+
+  t.mock.timers.tick(1);
+  assert.deepEqual(calls[1], { active: false, detections: [] });
+});
+
+test("a repeated pulse extends the active window", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const sensor = new AmcrestObjectSensor(5000);
+  const calls = observe(sensor);
+
+  sensor.pulse("person");
+  t.mock.timers.tick(4000);
+  sensor.pulse("person");
+  t.mock.timers.tick(4000);
+
+  assert.ok(
+    calls.every((c) => c.active),
+    "the second pulse must reset the expiry",
+  );
+  t.mock.timers.tick(1000);
+  assert.equal(calls[calls.length - 1].active, false);
+});
+
+test("a pulse timeout does not clear a category held by Start", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const sensor = new AmcrestObjectSensor(5000);
+  const calls = observe(sensor);
+
+  sensor.pulse("person");
+  sensor.report("vehicle", true);
+  t.mock.timers.tick(5000);
+
+  const last = calls[calls.length - 1];
+  assert.deepEqual(
+    last.detections.map((d) => d.label),
+    ["vehicle"],
+  );
+  assert.equal(last.active, true);
+});
+
+test("a Start after a pulse takes ownership of the category", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const sensor = new AmcrestObjectSensor(5000);
+  const calls = observe(sensor);
+
+  sensor.pulse("person");
+  sensor.report("person", true);
+  t.mock.timers.tick(10_000);
+
+  const last = calls[calls.length - 1];
+  assert.equal(last.active, true, "Start/Stop owns the category after a Start");
+  assert.deepEqual(
+    last.detections.map((d) => d.label),
+    ["person"],
+  );
+});
+
+test("destroy cancels pending pulse timers", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const sensor = new AmcrestObjectSensor(5000);
+  const calls = observe(sensor);
+
+  sensor.pulse("person");
+  sensor.destroy();
+  t.mock.timers.tick(10_000);
+
+  assert.equal(calls.length, 1, "no report should fire after destroy");
+});

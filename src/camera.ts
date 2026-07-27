@@ -170,6 +170,7 @@ export class AmcrestCamera {
       this.reconnectTimer = undefined;
     }
     this.eventAbort?.abort();
+    this.object?.destroy();
     this.resetTalkback();
     void this.rtspServer?.shutdown();
     void this.relay?.stop();
@@ -372,7 +373,11 @@ export class AmcrestCamera {
         this.audio?.report(c.active);
         break;
       case 'object':
-        this.object?.report(c.category, c.active, c.detection);
+        if (c.momentary) {
+          this.object?.pulse(c.category, c.detection);
+        } else {
+          this.object?.report(c.category, c.active, c.detection);
+        }
         break;
       case 'doorbell':
         this.doorbell?.trigger();

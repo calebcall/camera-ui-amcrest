@@ -24,6 +24,9 @@ export type AmcrestClassification =
     category: 'person' | 'vehicle';
     active: boolean;
     detection?: AmcrestDetection;
+    // True for `action=Pulse` events, which are instantaneous and never get a
+    // matching `Stop`. Consumers must clear these on a timer of their own.
+    momentary?: boolean;
   }
   | { kind: 'doorbell' };
 
@@ -79,13 +82,20 @@ function toDetection(obj?: AmcrestObjectPayload): AmcrestDetection | undefined {
 
 function objectResult(
   category: 'person' | 'vehicle',
-  active: boolean,
+  ev: AmcrestEvent,
   obj?: AmcrestObjectPayload,
 ): AmcrestClassification {
+  // A Pulse is an instantaneous hit with no matching Stop, so it activates the
+  // sensor and is flagged for the consumer to expire on its own.
+  const momentary = ev.action === 'Pulse';
   const detection = toDetection(obj);
-  return detection
-    ? { kind: 'object', category, active, detection }
-    : { kind: 'object', category, active };
+  return {
+    kind: 'object',
+    category,
+    active: momentary || ev.action === 'Start',
+    ...(detection ? { detection } : {}),
+    ...(momentary ? { momentary: true } : {}),
+  };
 }
 
 export function classifyAmcrestEvent(
@@ -99,17 +109,17 @@ export function classifyAmcrestEvent(
     case 'AudioMutation':
       return { kind: 'audio', active };
     case 'SmartMotionHuman':
-      return { kind: 'object', category: 'person', active };
+      return objectResult('person', ev);
     case 'Vehicle':
-      return { kind: 'object', category: 'vehicle', active };
+      return objectResult('vehicle', ev);
     case 'FaceDetection':
-      return objectResult('person', active, eventObject(ev));
+      return objectResult('person', ev, eventObject(ev));
     case 'CrossLineDetection':
     case 'CrossRegionDetection': {
       const obj = eventObject(ev);
       const category = objectTypeToCategory(obj?.ObjectType);
       if (!category) return undefined;
-      return objectResult(category, active, obj);
+      return objectResult(category, ev, obj);
     }
     case '_DoTalkAction_':
       return ev.action === 'Invite' ? { kind: 'doorbell' } : undefined;
