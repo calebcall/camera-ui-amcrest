@@ -1,13 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
-- Objects: handle the documented `SmartMotionVehicle` event code, **confirmed against real hardware**. The previous `Vehicle` code was never emitted by the device and has been removed.
-- Objects: read the SmartMotion payload shape (`object[]` with `Rect` and `VehicleID`/`HumanID`), which differs from the `Object.BoundingBox` shape used by the cross-line/cross-region/face events. Smart-motion detections previously fell back to a full-frame box even though the camera supplied real coordinates.
-- Objects: report every object in an event, not just the first — a single event can describe several.
-- Events: log each unrecognized event code once per camera at debug level, so detections the plugin doesn't map are visible instead of silently dropped. Chatty housekeeping codes (`VideoMotionInfo`, `NTPAdjustTime`, …) are muted.
-- Add `npm run watch-events` to tail a camera's event stream and print how each event is classified. See the README's troubleshooting section.
-- Tests: add a regression fixture captured from real hardware covering heartbeat filtering and multipart reassembly.
+Event handling verified against real hardware captures for the first time; both captures are now regression fixtures.
+
+- Objects: read the SmartMotion payload shape (`object[]` entries with `Rect` and `VehicleID`/`HumanID`), which differs from the `Object.BoundingBox` / `ObjectID` shape used by the cross-line, cross-region and face events. Smart-motion detections previously fell back to a full-frame box even though the camera supplied real coordinates, so the bounding boxes added in 1.1.0 did not reach smart-motion events.
+- Objects: report every object described by an event instead of only the first — one event can describe several, each with its own box and track ID.
+- Objects: handle the documented `SmartMotionVehicle` event code, confirmed emitted by real hardware. The speculative `Vehicle` code it replaces was never emitted by the device and has been removed.
+- Events: log each unrecognized event code once per camera at debug level, so detections the plugin doesn't map are visible instead of silently dropped. Chatty housekeeping codes (`VideoMotionInfo`, `NTPAdjustTime`, …) stay muted.
+- Add `npm run watch-events` to tail a camera's event stream and print how each event is classified, including decoded boxes and track IDs. See the README's troubleshooting section.
+
+Note: smart motion must be enabled on the device (`SmartMotionDetect[0].Enable=true`, or Setting → Event → Smart Motion Detection) before it emits person/vehicle events at all.
 
 ## 1.1.1
 
