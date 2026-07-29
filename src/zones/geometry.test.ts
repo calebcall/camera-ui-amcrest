@@ -212,3 +212,28 @@ test("boxInsidePolygon: degenerate polygon never contains", () => {
     false,
   );
 });
+
+test("boxInsidePolygon: a frame-clipped box spanning a notch that opens on the frame edge is not contained", () => {
+  // The regression the boundary-inclusive fix originally introduced. U_SHAPE's
+  // notch reaches y = 1, and this box's bottom edge lands on exactly 1.0 the way
+  // a clipped detection does. Both notch walls therefore meet the box edge as
+  // T-junctions, and both bottom corners sit on the arms' own edges, so every
+  // corner-and-crossing check reads "inside" while the box in fact encloses the
+  // notch — which is outside the polygon. The notch's horizontal wall passing
+  // through the box interior is what settles it.
+  assert.equal(
+    boxInsidePolygon({ x: 0.1, y: 0.2, width: 0.8, height: 0.8 }, U_SHAPE),
+    false,
+  );
+});
+
+test("boxInsidePolygon: a box touching a zone wall from outside is still contained by the arm it sits in", () => {
+  // Guards the floating-point half of the same bug. Reconstructing a clipped
+  // point by arithmetic (0.7 + -0.6) yields 0.09999999999999998 rather than 0.1,
+  // so an exact strict-interior test wrongly reads the notch wall as passing
+  // through this box and reports the arm's own occupant as escaping.
+  assert.equal(
+    boxInsidePolygon({ x: 0, y: 0.4, width: 0.2, height: 0.48 }, U_SHAPE),
+    true,
+  );
+});

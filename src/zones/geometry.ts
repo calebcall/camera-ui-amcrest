@@ -79,6 +79,70 @@ function pointInBox([x, y]: Vec2, box: BoundingBox): boolean {
 }
 
 /**
+ * Strictly inside — the box's open interior, edges excluded. Deliberately not
+ * `pointInBox`: a box flush against a zone edge has that zone's vertices sitting
+ * exactly on its own edge, and treating those as interior would undo the
+ * frame-edge containment fix.
+ *
+ * The margin is what makes that true in practice rather than only in principle.
+ * Callers reconstruct the point by arithmetic (`a + d * t`), which lands a few
+ * ulps off the face it should sit exactly on — `0.7 + (-0.6)` is
+ * 0.09999999999999998, not 0.1. An exact comparison reads that as interior and
+ * concludes a zone wall passes through a box it merely touches.
+ */
+function pointStrictlyInBox([x, y]: Vec2, box: BoundingBox): boolean {
+  const { minX, minY, maxX, maxY } = extents(box);
+  return (
+    x > minX + BOUNDARY_EPSILON &&
+    x < maxX - BOUNDARY_EPSILON &&
+    y > minY + BOUNDARY_EPSILON &&
+    y < maxY - BOUNDARY_EPSILON
+  );
+}
+
+/**
+ * True if any part of segment ab passes through the box's open interior.
+ *
+ * Liang-Barsky clips the segment to the closed box, then the midpoint of what
+ * survives decides. That midpoint is exact for an axis-aligned box: if the
+ * clipped part lay flat against a face, both its endpoints would share that
+ * face's coordinate and so would the midpoint, so a midpoint in the interior
+ * means the segment genuinely runs through the box rather than along it.
+ */
+function segmentEntersBox(a: Vec2, b: Vec2, box: BoundingBox): boolean {
+  const { minX, minY, maxX, maxY } = extents(box);
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const limits: [number, number][] = [
+    [-dx, a[0] - minX],
+    [dx, maxX - a[0]],
+    [-dy, a[1] - minY],
+    [dy, maxY - a[1]],
+  ];
+
+  let enter = 0;
+  let exit = 1;
+  for (const [rate, room] of limits) {
+    if (rate === 0) {
+      // Parallel to this face: either always within it, or never.
+      if (room < 0) return false;
+      continue;
+    }
+    const t = room / rate;
+    if (rate < 0) {
+      if (t > exit) return false;
+      if (t > enter) enter = t;
+    } else {
+      if (t < enter) return false;
+      if (t < exit) exit = t;
+    }
+  }
+
+  const mid = (enter + exit) / 2;
+  return pointStrictlyInBox([a[0] + dx * mid, a[1] + dy * mid], box);
+}
+
+/**
  * True if the point lies on the polygon's outline, within `BOUNDARY_EPSILON`.
  *
  * Containment needs this because `pointInPolygon`'s half-open rule calls two of
@@ -126,41 +190,15 @@ function segmentsIntersect(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): boolean {
   );
 }
 
-/**
- * The strict form: all four orientations must be non-zero, so the segments
- * genuinely cross rather than merely touch. Containment needs this — a box
- * flush against a zone's edge (the frame-edge case again) has corners sitting
- * exactly on that edge, and a T-junction there is not the box leaving the zone.
- */
-function segmentsProperlyCross(
-  a1: Vec2,
-  a2: Vec2,
-  b1: Vec2,
-  b2: Vec2,
-): boolean {
-  const o1 = orientation(a1, a2, b1);
-  const o2 = orientation(a1, a2, b2);
-  const o3 = orientation(b1, b2, a1);
-  const o4 = orientation(b1, b2, a2);
-  if (o1 === 0 || o2 === 0 || o3 === 0 || o4 === 0) return false;
-  return o1 !== o2 && o3 !== o4;
-}
-
-type SegmentTest = (a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2) => boolean;
-
-/** True if any edge of ring A crosses any edge of ring B, per `test`. */
-function ringsCross(
-  ringA: Vec2[],
-  ringB: Vec2[],
-  test: SegmentTest = segmentsIntersect,
-): boolean {
+/** True if any edge of ring A properly crosses any edge of ring B. */
+function ringsCross(ringA: Vec2[], ringB: Vec2[]): boolean {
   for (let i = 0; i < ringA.length; i++) {
     const a1 = ringA[i];
     const a2 = ringA[(i + 1) % ringA.length];
     for (let j = 0; j < ringB.length; j++) {
       const b1 = ringB[j];
       const b2 = ringB[(j + 1) % ringB.length];
-      if (test(a1, a2, b1, b2)) return true;
+      if (segmentsIntersect(a1, a2, b1, b2)) return true;
     }
   }
   return false;
@@ -183,23 +221,48 @@ export function boxIntersectsPolygon(
   return ringsCross(boxRing, polygon);
 }
 
+/** The box's midpoint, normalized extents so a reversed box still works. */
+function centre(box: BoundingBox): Vec2 {
+  const { minX, minY, maxX, maxY } = extents(box);
+  return [(minX + maxX) / 2, (minY + maxY) / 2];
+}
+
 /**
- * Containment test, boundary-inclusive: a corner lying exactly on the polygon's
+ * Containment test, boundary-inclusive: a box flush against the polygon's
  * outline counts as inside. That matters because both sides of the comparison
  * saturate at the frame edge — a clipped detection and a zone drawn to the edge
- * of the picture both normalize to exactly 1.0 — and a half-open answer there
+ * of the picture both normalize to exactly 1.0 — so a half-open answer there
  * would let a full-frame privacy mask miss the object it exists to hide.
  *
- * Checking the four corners is not sufficient on its own: in a concave polygon
- * all four can sit inside while the box still bulges out through a notch and
- * back in. The edge-crossing check is what catches that.
+ * Two conditions, and together they are exact:
+ *
+ * 1. No part of the polygon's outline passes through the box's interior. A box
+ *    genuinely inside the polygon cannot have the polygon's own boundary
+ *    running through it — that boundary is where the polygon stops. This
+ *    subsumes both "a corner is outside" and "an edge crosses", including the
+ *    concave case where all four corners sit inside but the box bulges out
+ *    through a notch and back in.
+ * 2. Given (1), the box's interior meets the polygon's boundary nowhere, so it
+ *    lies wholly inside or wholly outside and a single point settles which.
+ *    The centre is that point.
+ *
+ * The corner check stays as a fast rejection, and it is what decides a box with
+ * no area, whose empty interior makes (1) vacuous and (2) a bare point test.
  */
 export function boxInsidePolygon(box: BoundingBox, polygon: Vec2[]): boolean {
   if (polygon.length < 3) return false;
-  const boxRing = corners(box);
-  const cornersEnclosed = boxRing.every(
-    (c) => pointInPolygon(c, polygon) || pointOnPolygonBoundary(c, polygon),
-  );
-  if (!cornersEnclosed) return false;
-  return !ringsCross(boxRing, polygon, segmentsProperlyCross);
+
+  const enclosed = (p: Vec2): boolean =>
+    pointInPolygon(p, polygon) || pointOnPolygonBoundary(p, polygon);
+  if (!corners(box).every(enclosed)) return false;
+
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    if (segmentEntersBox(a, b, box)) return false;
+  }
+
+  // Distinguishes a box inside the polygon from a box wedged exactly inside a
+  // notch that is outside it — flush against both walls, so nothing above fires.
+  return enclosed(centre(box));
 }

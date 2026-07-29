@@ -511,3 +511,49 @@ test("decideObjectEvent: with no zones, every activation reports unchanged", () 
   assert.equal(decision.kind === "report" && decision.detections.length, 1);
   assert.equal(decision.kind === "report" && decision.dropped.length, 0);
 });
+
+test("keepDetection: a contain zone whose notch opens on the frame edge does not contain a clipped box spanning it", () => {
+  // End-to-end guard for the frame-edge notch regression. Without it, a
+  // contain+include zone accepts an object largely outside it, and the
+  // exclude/privacy-mask form drops a detection it should have kept.
+  const zones = compileZones([
+    zone({
+      name: "Yard",
+      type: "contain",
+      points: [
+        [0, 0],
+        [100, 0],
+        [100, 100],
+        [80, 100],
+        [80, 30],
+        [20, 30],
+        [20, 100],
+        [0, 100],
+      ],
+    }),
+  ]);
+  const verdict = keepDetection(
+    { x: 0.1, y: 0.2, width: 0.8, height: 0.8 },
+    "person",
+    zones,
+  );
+  assert.equal(verdict.keep, false);
+});
+
+test("decideObjectEvent: a reversed box is filtered, not treated as coordinate-free", () => {
+  // classify.ts does not enforce x2 > x1, and geometry.ts normalizes reversed
+  // extents. So a reversed box carries real coordinates and must go through the
+  // zone test rather than taking the fail-open path meant for empty payloads.
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  const decision = decideObjectEvent(
+    {
+      kind: "object",
+      category: "person",
+      active: true,
+      // The OUTSIDE box, expressed back-to-front.
+      detections: [{ box: { x: 0.95, y: 0.95, width: -0.05, height: -0.05 } }],
+    },
+    zones,
+  );
+  assert.equal(decision.kind, "suppress");
+});

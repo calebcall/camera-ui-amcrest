@@ -176,7 +176,14 @@ type ObjectClassification = Extract<AmcrestClassification, { kind: 'object' }>;
 
 /** A box with no area pins the detection nowhere, so it carries no position. */
 function hasCoordinates(detection: AmcrestDetection): boolean {
-  return detection.box.width > 0 && detection.box.height > 0;
+  // Magnitude, not sign: firmware is not obliged to send `[x1, y1, x2, y2]` the
+  // right way round, and `geometry.ts` already normalizes a reversed rectangle.
+  // Testing the raw values would classify a reversed-but-real box as having no
+  // coordinates, which is the fail-open path rather than the zone test it
+  // deserves. Only a genuinely zero-area box counts as carrying nothing.
+  return (
+    Math.abs(detection.box.width) > 0 && Math.abs(detection.box.height) > 0
+  );
 }
 
 /**
