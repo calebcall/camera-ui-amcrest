@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { boxIntersectsPolygon, pointInPolygon } from "./geometry.js";
+import {
+  boxInsidePolygon,
+  boxIntersectsPolygon,
+  pointInPolygon,
+} from "./geometry.js";
 
 import type { Vec2 } from "./geometry.js";
 
@@ -89,7 +93,59 @@ test("boxIntersectsPolygon: disjoint", () => {
 
 test("boxIntersectsPolygon: degenerate polygon never matches", () => {
   assert.equal(
-    boxIntersectsPolygon({ x: 0, y: 0, width: 1, height: 1 }, [[0, 0], [1, 1]]),
+    boxIntersectsPolygon({ x: 0, y: 0, width: 1, height: 1 }, [
+      [0, 0],
+      [1, 1],
+    ]),
+    false,
+  );
+});
+
+test("boxInsidePolygon: wholly inside a convex polygon", () => {
+  assert.equal(
+    boxInsidePolygon({ x: 0.3, y: 0.3, width: 0.2, height: 0.2 }, SQUARE),
+    true,
+  );
+});
+
+test("boxInsidePolygon: partial overlap is not containment", () => {
+  assert.equal(
+    boxInsidePolygon({ x: 0.7, y: 0.7, width: 0.2, height: 0.2 }, SQUARE),
+    false,
+  );
+});
+
+test("boxInsidePolygon: disjoint", () => {
+  assert.equal(
+    boxInsidePolygon({ x: 0.85, y: 0.85, width: 0.1, height: 0.1 }, SQUARE),
+    false,
+  );
+});
+
+test("boxInsidePolygon: wholly inside a concave polygon", () => {
+  // Sits in the U's bottom band, clear of the notch.
+  assert.equal(
+    boxInsidePolygon({ x: 0.4, y: 0.05, width: 0.2, height: 0.15 }, U_SHAPE),
+    true,
+  );
+});
+
+test("boxInsidePolygon: all corners inside but bulging through a concave notch", () => {
+  // Spans the U's two arms at y 0.5-0.6. All four corners land inside an arm,
+  // but the middle of the box crosses the notch, which is outside the polygon.
+  // A corners-only implementation returns true here — it must be false.
+  assert.equal(
+    boxInsidePolygon({ x: 0.1, y: 0.5, width: 0.8, height: 0.1 }, U_SHAPE),
+    false,
+  );
+});
+
+test("boxInsidePolygon: degenerate polygon never contains", () => {
+  assert.equal(
+    boxInsidePolygon({ x: 0.4, y: 0.4, width: 0.1, height: 0.1 }, [
+      [0, 0],
+      [1, 1],
+    ]),
     false,
   );
 });

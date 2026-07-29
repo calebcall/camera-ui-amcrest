@@ -22,7 +22,9 @@ export function pointInPolygon(point: Vec2, polygon: Vec2[]): boolean {
     const [xi, yi] = polygon[i];
     const [xj, yj] = polygon[j];
     // Only edges that straddle the ray's y can be crossed by it.
-    if (yi > py === yj > py) continue;
+    const iAbove = yi > py;
+    const jAbove = yj > py;
+    if (iAbove === jAbove) continue;
     const crossX = ((xj - xi) * (py - yi)) / (yj - yi) + xi;
     if (px < crossX) inside = !inside;
   }
@@ -42,7 +44,10 @@ function corners(box: BoundingBox): Vec2[] {
 
 function pointInBox([x, y]: Vec2, box: BoundingBox): boolean {
   return (
-    x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height
+    x >= box.x &&
+    x <= box.x + box.width &&
+    y >= box.y &&
+    y <= box.y + box.height
   );
 }
 
@@ -95,4 +100,16 @@ export function boxIntersectsPolygon(
   if (boxRing.some((c) => pointInPolygon(c, polygon))) return true;
   if (polygon.some((p) => pointInBox(p, box))) return true;
   return ringsCross(boxRing, polygon);
+}
+
+/**
+ * Containment test. Checking the four corners is not sufficient: in a concave
+ * polygon all four can sit inside while the box still bulges out through a
+ * notch and back in. The edge-crossing check is what catches that.
+ */
+export function boxInsidePolygon(box: BoundingBox, polygon: Vec2[]): boolean {
+  if (polygon.length < 3) return false;
+  const boxRing = corners(box);
+  if (!boxRing.every((c) => pointInPolygon(c, polygon))) return false;
+  return !ringsCross(boxRing, polygon);
 }
