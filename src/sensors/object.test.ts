@@ -187,6 +187,20 @@ test("destroy cancels pending pulse timers", (t) => {
   assert.equal(calls.length, 1, "no report should fire after destroy");
 });
 
+test("a Stop for a never-activated category leaves other categories alone", () => {
+  // Zone filtering can suppress a Start while its matching Stop still arrives.
+  // The Stop must be harmless rather than clobbering an unrelated category.
+  const sensor = new AmcrestObjectSensor();
+  const calls = observe(sensor);
+
+  sensor.report("person", true);
+  sensor.report("vehicle", false);
+
+  const last = calls[calls.length - 1];
+  assert.equal(last.active, true);
+  assert.deepEqual(last.detections.map((d) => d.label), ["person"]);
+});
+
 test("reports one detection per object when an event carries several", () => {
   const sensor = new AmcrestObjectSensor();
   const calls = observe(sensor);
