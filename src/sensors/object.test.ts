@@ -198,7 +198,10 @@ test("a Stop for a never-activated category leaves other categories alone", () =
 
   const last = calls[calls.length - 1];
   assert.equal(last.active, true);
-  assert.deepEqual(last.detections.map((d) => d.label), ["person"]);
+  assert.deepEqual(
+    last.detections.map((d) => d.label),
+    ["person"],
+  );
 });
 
 test("reports one detection per object when an event carries several", () => {
