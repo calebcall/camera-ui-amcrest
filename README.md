@@ -84,18 +84,20 @@ Filtering uses the position reported when the camera first detects the object. I
 Enable debug logging in camera.ui and look for:
 
 ```
-SmartMotionHuman suppressed by detection zones: outside include zone(s) 'Driveway'
-SmartMotionVehicle partially filtered by detection zones: inside exclude zone 'Street'
+SmartMotionHuman suppressed by detection zones: box [0.85,0.85,0.06,0.06] outside include zone(s) 'Driveway'
+SmartMotionVehicle partially filtered by detection zones: box [0.12,0.61,0.30,0.24] inside exclude zone 'Street'
 Detection zones updated: 2 zone(s)
 ```
+
+The `box` is the detection's position as `[x, y, width, height]`, in fractions of the frame from the top-left corner. It tells you whether the zone or the camera's own coordinates are the surprise — a value of `1.00` on an edge means the object was clipped at the edge of frame.
 
 If a camera reports detections without coordinates, you will see this once per event type:
 
 ```
-SmartMotionHuman (person) carried no coordinates, so detection zones cannot be applied to it — it is reported unfiltered.
+SmartMotionHuman (person) carried no coordinates, so detection zones cannot be applied to it — it is reported unfiltered. Further occurrences are not logged.
 ```
 
-That is expected on some firmware. Those events are always reported rather than dropped, so a terse camera never costs you a real detection.
+That is expected on some firmware. Those events are always reported rather than dropped, so a terse camera never costs you a real detection. Note that this line is only logged when you have zones drawn — with no zones there is nothing for the missing coordinates to cost you, so it is not worth saying.
 
 ## Troubleshooting events
 
