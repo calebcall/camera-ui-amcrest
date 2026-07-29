@@ -16,6 +16,13 @@ const SQUARE: Vec2[] = [
   [0.2, 0.8],
 ];
 
+const FULL_FRAME: Vec2[] = [
+  [0, 0],
+  [1, 0],
+  [1, 1],
+  [0, 1],
+];
+
 const U_SHAPE: Vec2[] = [
   [0, 0],
   [1, 0],
@@ -40,15 +47,20 @@ test("pointInPolygon: concave shapes exclude the notch", () => {
   assert.equal(pointInPolygon([0.5, 0.6], U_SHAPE), false, "notch is outside");
 });
 
-// Boundary points are resolved by a half-open convention: the left and bottom
-// edges count as inside, the right and top edges as outside. This is not
-// arbitrary trivia — it is what stops two zones that share an edge from both
-// claiming the same detection.
+// Boundary points are resolved by a half-open convention: the left and top
+// edges count as inside, the right and bottom edges as outside (y grows
+// downward in image space, so the smaller y is the top). It only gives a bare
+// point a deterministic answer — boxInsidePolygon deliberately overrides it,
+// because a box flush against a zone edge is inside that zone.
 test("pointInPolygon: boundary points use a consistent half-open rule", () => {
   assert.equal(pointInPolygon([0.2, 0.5], SQUARE), true, "left edge");
   assert.equal(pointInPolygon([0.8, 0.5], SQUARE), false, "right edge");
-  assert.equal(pointInPolygon([0.2, 0.2], SQUARE), true, "bottom-left vertex");
-  assert.equal(pointInPolygon([0.8, 0.8], SQUARE), false, "top-right vertex");
+  assert.equal(pointInPolygon([0.2, 0.2], SQUARE), true, "top-left vertex");
+  assert.equal(
+    pointInPolygon([0.8, 0.8], SQUARE),
+    false,
+    "bottom-right vertex",
+  );
 });
 
 test("boxIntersectsPolygon: box corner inside the polygon", () => {
@@ -101,6 +113,24 @@ test("boxIntersectsPolygon: degenerate polygon never matches", () => {
   );
 });
 
+test("boxIntersectsPolygon: a reversed box still swallows the polygon", () => {
+  // Firmware is not obliged to send Rect the right way round. Expressed with
+  // negative extents, this is the same 0-1 box as the test above, and the only
+  // branch that can find the overlap is "polygon vertex inside the box" — which
+  // an unnormalized `x >= box.x && x <= box.x + box.width` can never satisfy.
+  assert.equal(
+    boxIntersectsPolygon({ x: 1, y: 1, width: -1, height: -1 }, SQUARE),
+    true,
+  );
+});
+
+test("boxInsidePolygon: a reversed box is still contained", () => {
+  assert.equal(
+    boxInsidePolygon({ x: 0.5, y: 0.5, width: -0.2, height: -0.2 }, SQUARE),
+    true,
+  );
+});
+
 test("boxInsidePolygon: wholly inside a convex polygon", () => {
   assert.equal(
     boxInsidePolygon({ x: 0.3, y: 0.3, width: 0.2, height: 0.2 }, SQUARE),
@@ -136,6 +166,39 @@ test("boxInsidePolygon: all corners inside but bulging through a concave notch",
   // A corners-only implementation returns true here — it must be false.
   assert.equal(
     boxInsidePolygon({ x: 0.1, y: 0.5, width: 0.8, height: 0.1 }, U_SHAPE),
+    false,
+  );
+});
+
+// A detection clipped at the edge of frame normalizes to exactly 1.0, and a
+// zone drawn to the edge of the picture compiles to exactly 1.0 too. If
+// containment were half-open on those sides, a full-frame zone would fail to
+// contain the object standing at the edge of it.
+test("boxInsidePolygon: a box flush against the bottom of frame is inside a full-frame zone", () => {
+  assert.equal(
+    boxInsidePolygon({ x: 0.3, y: 0.55, width: 0.4, height: 0.45 }, FULL_FRAME),
+    true,
+  );
+});
+
+test("boxInsidePolygon: a box flush against the right of frame is inside a full-frame zone", () => {
+  assert.equal(
+    boxInsidePolygon({ x: 0.6, y: 0.2, width: 0.4, height: 0.3 }, FULL_FRAME),
+    true,
+  );
+});
+
+test("boxInsidePolygon: a box filling the frame exactly is inside a full-frame zone", () => {
+  assert.equal(
+    boxInsidePolygon({ x: 0, y: 0, width: 1, height: 1 }, FULL_FRAME),
+    true,
+  );
+});
+
+test("boxInsidePolygon: sharing an edge is not enough when the box lies outside it", () => {
+  // Sits directly below the frame, touching only along y = 1.
+  assert.equal(
+    boxInsidePolygon({ x: 0.3, y: 1, width: 0.4, height: 0.2 }, FULL_FRAME),
     false,
   );
 });
