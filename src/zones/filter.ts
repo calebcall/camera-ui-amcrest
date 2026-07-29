@@ -58,6 +58,19 @@ export type ZoneVerdict = { keep: true } | { keep: false; reason: string };
 
 const KEEP: ZoneVerdict = { keep: true };
 
+/** Decimal places in a logged box — enough to locate it, short enough to read. */
+const BOX_LOG_PRECISION = 2;
+
+/**
+ * Renders the box that was tested, so a suppression log says where the object
+ * was and not merely which zone objected. Fixed precision on purpose: raw
+ * floats print as 0.7100000000000001 and make the line unreadable.
+ */
+function describeBox(box: BoundingBox): string {
+  const n = (v: number): string => v.toFixed(BOX_LOG_PRECISION);
+  return `box [${n(box.x)},${n(box.y)},${n(box.width)},${n(box.height)}]`;
+}
+
 function applies(zone: CompiledZone, label: DetectionLabel): boolean {
   return zone.labels.size === 0 || zone.labels.has(label);
 }
@@ -90,14 +103,20 @@ export function keepDetection(
     (z) => z.isPrivacyMask && boxInsidePolygon(box, z.polygon),
   );
   if (mask)
-    return { keep: false, reason: `inside privacy mask '${mask.name}'` };
+    return {
+      keep: false,
+      reason: `${describeBox(box)} inside privacy mask '${mask.name}'`,
+    };
 
   const gates = applicable.filter((z) => !z.isPrivacyMask);
   if (gates.length === 0) return KEEP;
 
   const excluded = gates.find((z) => z.filter === 'exclude' && inZone(box, z));
   if (excluded) {
-    return { keep: false, reason: `inside exclude zone '${excluded.name}'` };
+    return {
+      keep: false,
+      reason: `${describeBox(box)} inside exclude zone '${excluded.name}'`,
+    };
   }
 
   const includes = gates.filter((z) => z.filter === 'include');
@@ -105,7 +124,10 @@ export function keepDetection(
   if (includes.some((z) => inZone(box, z))) return KEEP;
 
   const names = includes.map((z) => `'${z.name}'`).join(', ');
-  return { keep: false, reason: `outside include zone(s) ${names}` };
+  return {
+    keep: false,
+    reason: `${describeBox(box)} outside include zone(s) ${names}`,
+  };
 }
 
 /**

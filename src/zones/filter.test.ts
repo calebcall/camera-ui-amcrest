@@ -209,7 +209,7 @@ test("keepDetection: a privacy mask drops a detection an include zone would have
   assert.equal(verdict.keep, false);
   assert.equal(
     verdict.keep === false && verdict.reason,
-    "inside privacy mask 'Bins'",
+    "box [0.40,0.40,0.10,0.10] inside privacy mask 'Bins'",
   );
 });
 
@@ -293,7 +293,7 @@ test("keepDetection: with only exclude zones, not being excluded is enough", () 
   assert.equal(verdict.keep, false);
   assert.equal(
     verdict.keep === false && verdict.reason,
-    "inside exclude zone 'Street'",
+    "box [0.40,0.40,0.10,0.10] inside exclude zone 'Street'",
   );
 });
 
@@ -314,7 +314,22 @@ test("keepDetection: failing every include zone names them all", () => {
   assert.equal(verdict.keep, false);
   assert.equal(
     verdict.keep === false && verdict.reason,
-    "outside include zone(s) 'Driveway', 'Porch'",
+    "box [0.90,0.90,0.05,0.05] outside include zone(s) 'Driveway', 'Porch'",
+  );
+});
+
+test("keepDetection: the reason names the box that was tested", () => {
+  // The box is what makes a suppression diagnosable — "outside 'Driveway'" on
+  // its own cannot tell you whether the zone or the coordinates are wrong.
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  const verdict = keepDetection(
+    { x: 0.7100000000000001, y: 0.9, width: 0.09, height: 0.21 },
+    "person",
+    zones,
+  );
+  assert.equal(
+    verdict.keep === false && verdict.reason,
+    "box [0.71,0.90,0.09,0.21] outside include zone(s) 'Driveway'",
   );
 });
 
@@ -384,7 +399,7 @@ test("decideObjectEvent: suppresses when nothing survives", () => {
   );
   assert.equal(decision.kind, "suppress");
   assert.deepEqual(decision.kind === "suppress" && decision.reasons, [
-    "outside include zone(s) 'Driveway'",
+    "box [0.90,0.90,0.05,0.05] outside include zone(s) 'Driveway'",
   ]);
 });
 
