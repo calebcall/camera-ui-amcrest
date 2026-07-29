@@ -147,6 +147,11 @@ export type ZoneDecision =
 
 type ObjectClassification = Extract<AmcrestClassification, { kind: 'object' }>;
 
+/** A box with no area pins the detection nowhere, so it carries no position. */
+function hasCoordinates(detection: AmcrestDetection): boolean {
+  return detection.box.width > 0 && detection.box.height > 0;
+}
+
 /**
  * Applies the camera's detection zones to a classified object event.
  *
@@ -170,9 +175,11 @@ export function decideObjectEvent(
   }
 
   const detections = c.detections ?? [];
-  // Fail open. Some firmware sends a bare Start with no payload; a terse
-  // payload must never cost a real person detection.
-  if (detections.length === 0) {
+  // Fail open. Some firmware sends a bare Start with no payload and some sends
+  // a placeholder Rect of [0,0,0,0]; both mean "no position", and a terse
+  // payload must never cost a real person detection. A zero-area box would
+  // otherwise fail every include zone and be suppressed.
+  if (!detections.some(hasCoordinates)) {
     return { kind: 'skipped', detections, reason: 'no-coordinates' };
   }
 

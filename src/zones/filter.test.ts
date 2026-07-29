@@ -364,6 +364,49 @@ test("decideObjectEvent: an activation with no coordinates fails open", () => {
   );
 });
 
+test("decideObjectEvent: an activation whose only box has no area fails open", () => {
+  // Some firmware sends a placeholder Rect of [0,0,0,0]. A zero-area box fails
+  // every include zone, so filtering it would suppress a real detection on the
+  // strength of a terse payload — the exact thing the fail-open rule forbids.
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  const decision = decideObjectEvent(
+    {
+      kind: "object",
+      category: "person",
+      active: true,
+      detections: [{ box: { x: 0, y: 0, width: 0, height: 0 } }],
+    },
+    zones,
+  );
+  assert.equal(decision.kind, "skipped");
+  assert.equal(
+    decision.kind === "skipped" && decision.reason,
+    "no-coordinates",
+  );
+  assert.equal(decision.kind === "skipped" && decision.detections.length, 1);
+});
+
+test("decideObjectEvent: a real box alongside a degenerate one is still filtered", () => {
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  const decision = decideObjectEvent(
+    {
+      kind: "object",
+      category: "person",
+      active: true,
+      detections: [
+        { box: { x: 0, y: 0, width: 0, height: 0 }, trackId: 1 },
+        { box: INSIDE, trackId: 2 },
+      ],
+    },
+    zones,
+  );
+  assert.equal(decision.kind, "report");
+  assert.deepEqual(
+    decision.kind === "report" && decision.detections.map((d) => d.trackId),
+    [2],
+  );
+});
+
 test("decideObjectEvent: reports only the detections that survive", () => {
   const zones = compileZones([zone({ name: "Driveway" })]);
   const decision = decideObjectEvent(
