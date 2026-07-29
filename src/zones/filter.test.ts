@@ -60,6 +60,42 @@ test("compileZones handles an empty list", () => {
   assert.deepEqual(compileZones([]), []);
 });
 
+test("compileZones skips malformed points instead of throwing", () => {
+  // This runs inside a shared SDK property-change subscriber, and Subject.next
+  // has no try/catch — a throw here would abort delivery to every other
+  // subscriber, and on the seeding call would leave the camera offline.
+  const malformed = [
+    { name: "NotArrays", points: [1, 2, 3] },
+    { name: "TooShort", points: [[10], [20, 20], [30, 30]] },
+    {
+      name: "NotNumbers",
+      points: [
+        ["a", "b"],
+        [20, 20],
+        [30, 30],
+      ],
+    },
+    {
+      name: "NotFinite",
+      points: [
+        [NaN, 0],
+        [20, 20],
+        [30, 30],
+      ],
+    },
+    { name: "Null", points: [null, [20, 20], [30, 30]] },
+  ] as unknown as Partial<DetectionZone>[];
+
+  const kept = compileZones([
+    ...malformed.map((m) => zone(m)),
+    zone({ name: "Real" }),
+  ]);
+  assert.deepEqual(
+    kept.map((z) => z.name),
+    ["Real"],
+  );
+});
+
 test("compileZones carries labels into a Set", () => {
   const [compiled] = compileZones([zone({ labels: ["person", "vehicle"] })]);
   assert.equal(compiled.labels.has("person"), true);

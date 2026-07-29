@@ -28,24 +28,51 @@ export interface CompiledZone {
 }
 
 /**
- * Runs once per zone-list change, not per event. Polygons with fewer than
- * three points cannot enclose anything, so they are dropped rather than
- * silently matching nothing later.
+ * A well-formed `[x, y]` pair. Typed `unknown` rather than `Point` because the
+ * SDK's own type is not a guarantee here — the data crosses a process boundary.
+ */
+function isPoint(point: unknown): point is [number, number] {
+  return (
+    Array.isArray(point) &&
+    point.length >= 2 &&
+    Number.isFinite(point[0]) &&
+    Number.isFinite(point[1])
+  );
+}
+
+/**
+ * A zone that can actually be projected into 0-1 space. Polygons with fewer
+ * than three points cannot enclose anything, and malformed points cannot be
+ * divided at all.
+ */
+function isDrawable(zone: DetectionZone): boolean {
+  return (
+    Array.isArray(zone.points) &&
+    zone.points.length >= 3 &&
+    zone.points.every((p) => isPoint(p))
+  );
+}
+
+/**
+ * Runs once per zone-list change, not per event. Unusable zones are dropped
+ * rather than throwing: this runs inside a shared SDK property-change
+ * subscriber, whose `Subject.next()` calls subscribers in a bare loop, so a
+ * throw here would abort delivery to every other subscriber — and on the
+ * seeding call in `initialize()` it would leave the camera offline and skip
+ * every camera after it in the list.
  */
 export function compileZones(zones: DetectionZone[]): CompiledZone[] {
-  return zones
-    .filter((z) => Array.isArray(z.points) && z.points.length >= 3)
-    .map((z) => ({
-      name: z.name,
-      polygon: z.points.map(([x, y]): Vec2 => [
-        x / ZONE_COORD_MAX,
-        y / ZONE_COORD_MAX,
-      ]),
-      type: z.type,
-      filter: z.filter,
-      labels: new Set(z.labels ?? []),
-      isPrivacyMask: z.isPrivacyMask,
-    }));
+  return zones.filter(isDrawable).map((z) => ({
+    name: z.name,
+    polygon: z.points.map(([x, y]): Vec2 => [
+      x / ZONE_COORD_MAX,
+      y / ZONE_COORD_MAX,
+    ]),
+    type: z.type,
+    filter: z.filter,
+    labels: new Set(z.labels ?? []),
+    isPrivacyMask: z.isPrivacyMask,
+  }));
 }
 
 /**
