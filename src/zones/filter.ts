@@ -2,6 +2,10 @@ import { boxInsidePolygon, boxIntersectsPolygon } from './geometry.js';
 
 import type { Vec2 } from './geometry.js';
 import type {
+  AmcrestClassification,
+  AmcrestDetection,
+} from '../amcrest/classify.js';
+import type {
   BoundingBox,
   DetectionLabel,
   DetectionZone,
@@ -33,9 +37,10 @@ export function compileZones(zones: DetectionZone[]): CompiledZone[] {
     .filter((z) => Array.isArray(z.points) && z.points.length >= 3)
     .map((z) => ({
       name: z.name,
-      polygon: z.points.map(
-        ([x, y]): Vec2 => [x / ZONE_COORD_MAX, y / ZONE_COORD_MAX],
-      ),
+      polygon: z.points.map(([x, y]): Vec2 => [
+        x / ZONE_COORD_MAX,
+        y / ZONE_COORD_MAX,
+      ]),
       type: z.type,
       filter: z.filter,
       labels: new Set(z.labels ?? []),
@@ -84,7 +89,8 @@ export function keepDetection(
   const mask = applicable.find(
     (z) => z.isPrivacyMask && boxInsidePolygon(box, z.polygon),
   );
-  if (mask) return { keep: false, reason: `inside privacy mask '${mask.name}'` };
+  if (mask)
+    return { keep: false, reason: `inside privacy mask '${mask.name}'` };
 
   const gates = applicable.filter((z) => !z.isPrivacyMask);
   if (gates.length === 0) return KEEP;
@@ -100,4 +106,62 @@ export function keepDetection(
 
   const names = includes.map((z) => `'${z.name}'`).join(', ');
   return { keep: false, reason: `outside include zone(s) ${names}` };
+}
+
+/**
+ * What the caller should do with an object event.
+ *
+ * `skipped` still reports — it means the event bypassed zone filtering rather
+ * than passing it, and carries why so the caller can say so once in the log.
+ */
+export type ZoneDecision =
+  | { kind: 'report'; detections: AmcrestDetection[]; dropped: string[] }
+  | {
+    kind: 'skipped';
+    detections: AmcrestDetection[];
+    reason: 'deactivation' | 'no-coordinates';
+  }
+  | { kind: 'suppress'; reasons: string[] };
+
+type ObjectClassification = Extract<AmcrestClassification, { kind: 'object' }>;
+
+/**
+ * Applies the camera's detection zones to a classified object event.
+ *
+ * Deactivations and coordinate-free activations deliberately bypass filtering;
+ * see the inline notes. Everything else is filtered per detection, and an event
+ * whose detections are all dropped is suppressed outright rather than reported
+ * as an empty activation.
+ */
+export function decideObjectEvent(
+  c: ObjectClassification,
+  zones: CompiledZone[],
+): ZoneDecision {
+  // A Stop carries no boxes, so it can never satisfy a zone. Filtering it would
+  // suppress it, and the sensor would stay latched active forever.
+  if (!c.active) {
+    return {
+      kind: 'skipped',
+      detections: c.detections ?? [],
+      reason: 'deactivation',
+    };
+  }
+
+  const detections = c.detections ?? [];
+  // Fail open. Some firmware sends a bare Start with no payload; a terse
+  // payload must never cost a real person detection.
+  if (detections.length === 0) {
+    return { kind: 'skipped', detections, reason: 'no-coordinates' };
+  }
+
+  const kept: AmcrestDetection[] = [];
+  const dropped: string[] = [];
+  for (const detection of detections) {
+    const verdict = keepDetection(detection.box, c.category, zones);
+    if (verdict.keep) kept.push(detection);
+    else dropped.push(verdict.reason);
+  }
+
+  if (kept.length === 0) return { kind: 'suppress', reasons: dropped };
+  return { kind: 'report', detections: kept, dropped };
 }

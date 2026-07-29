@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { compileZones, keepDetection } from "./filter.js";
+import { compileZones, decideObjectEvent, keepDetection } from "./filter.js";
 
 import type { DetectionZone } from "@camera.ui/sdk";
 
@@ -41,10 +41,19 @@ test("compileZones scales 0-100 percentages into 0-1 space", () => {
 
 test("compileZones drops polygons with fewer than three points", () => {
   const kept = compileZones([
-    zone({ name: "Line", points: [[0, 0], [100, 100]] }),
+    zone({
+      name: "Line",
+      points: [
+        [0, 0],
+        [100, 100],
+      ],
+    }),
     zone({ name: "Real" }),
   ]);
-  assert.deepEqual(kept.map((z) => z.name), ["Real"]);
+  assert.deepEqual(
+    kept.map((z) => z.name),
+    ["Real"],
+  );
 });
 
 test("compileZones handles an empty list", () => {
@@ -74,23 +83,99 @@ test("keepDetection: the four type x filter combinations", () => {
     expected: boolean;
     label: string;
   }[] = [
-    { type: "intersect", filter: "include", box: INSIDE, expected: true, label: "include/intersect wholly inside" },
-    { type: "intersect", filter: "include", box: PARTIAL, expected: true, label: "include/intersect overlapping" },
-    { type: "intersect", filter: "include", box: OUTSIDE, expected: false, label: "include/intersect outside" },
-    { type: "contain", filter: "include", box: INSIDE, expected: true, label: "include/contain wholly inside" },
-    { type: "contain", filter: "include", box: PARTIAL, expected: false, label: "include/contain only overlapping" },
-    { type: "contain", filter: "include", box: OUTSIDE, expected: false, label: "include/contain outside" },
-    { type: "intersect", filter: "exclude", box: INSIDE, expected: false, label: "exclude/intersect wholly inside" },
-    { type: "intersect", filter: "exclude", box: PARTIAL, expected: false, label: "exclude/intersect overlapping" },
-    { type: "intersect", filter: "exclude", box: OUTSIDE, expected: true, label: "exclude/intersect outside" },
-    { type: "contain", filter: "exclude", box: INSIDE, expected: false, label: "exclude/contain wholly inside" },
-    { type: "contain", filter: "exclude", box: PARTIAL, expected: true, label: "exclude/contain only overlapping" },
-    { type: "contain", filter: "exclude", box: OUTSIDE, expected: true, label: "exclude/contain outside" },
+    {
+      type: "intersect",
+      filter: "include",
+      box: INSIDE,
+      expected: true,
+      label: "include/intersect wholly inside",
+    },
+    {
+      type: "intersect",
+      filter: "include",
+      box: PARTIAL,
+      expected: true,
+      label: "include/intersect overlapping",
+    },
+    {
+      type: "intersect",
+      filter: "include",
+      box: OUTSIDE,
+      expected: false,
+      label: "include/intersect outside",
+    },
+    {
+      type: "contain",
+      filter: "include",
+      box: INSIDE,
+      expected: true,
+      label: "include/contain wholly inside",
+    },
+    {
+      type: "contain",
+      filter: "include",
+      box: PARTIAL,
+      expected: false,
+      label: "include/contain only overlapping",
+    },
+    {
+      type: "contain",
+      filter: "include",
+      box: OUTSIDE,
+      expected: false,
+      label: "include/contain outside",
+    },
+    {
+      type: "intersect",
+      filter: "exclude",
+      box: INSIDE,
+      expected: false,
+      label: "exclude/intersect wholly inside",
+    },
+    {
+      type: "intersect",
+      filter: "exclude",
+      box: PARTIAL,
+      expected: false,
+      label: "exclude/intersect overlapping",
+    },
+    {
+      type: "intersect",
+      filter: "exclude",
+      box: OUTSIDE,
+      expected: true,
+      label: "exclude/intersect outside",
+    },
+    {
+      type: "contain",
+      filter: "exclude",
+      box: INSIDE,
+      expected: false,
+      label: "exclude/contain wholly inside",
+    },
+    {
+      type: "contain",
+      filter: "exclude",
+      box: PARTIAL,
+      expected: true,
+      label: "exclude/contain only overlapping",
+    },
+    {
+      type: "contain",
+      filter: "exclude",
+      box: OUTSIDE,
+      expected: true,
+      label: "exclude/contain outside",
+    },
   ];
 
   for (const c of cases) {
     const zones = compileZones([zone({ type: c.type, filter: c.filter })]);
-    assert.equal(keepDetection(c.box, "person", zones).keep, c.expected, c.label);
+    assert.equal(
+      keepDetection(c.box, "person", zones).keep,
+      c.expected,
+      c.label,
+    );
   }
 });
 
@@ -109,17 +194,36 @@ test("keepDetection: empty labels applies the zone to every label", () => {
 
 test("keepDetection: a privacy mask drops a detection an include zone would have kept", () => {
   const zones = compileZones([
-    zone({ name: "Everything", points: [[0, 0], [100, 0], [100, 100], [0, 100]] }),
+    zone({
+      name: "Everything",
+      points: [
+        [0, 0],
+        [100, 0],
+        [100, 100],
+        [0, 100],
+      ],
+    }),
     zone({ name: "Bins", isPrivacyMask: true }),
   ]);
   const verdict = keepDetection(INSIDE, "person", zones);
   assert.equal(verdict.keep, false);
-  assert.equal(verdict.keep === false && verdict.reason, "inside privacy mask 'Bins'");
+  assert.equal(
+    verdict.keep === false && verdict.reason,
+    "inside privacy mask 'Bins'",
+  );
 });
 
 test("keepDetection: matching any one of several include zones is enough", () => {
   const zones = compileZones([
-    zone({ name: "Corner", points: [[0, 0], [10, 0], [10, 10], [0, 10]] }),
+    zone({
+      name: "Corner",
+      points: [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+      ],
+    }),
     zone({ name: "Driveway" }),
   ]);
   assert.equal(keepDetection(INSIDE, "person", zones).keep, true);
@@ -130,13 +234,24 @@ test("keepDetection: with only exclude zones, not being excluded is enough", () 
   assert.equal(keepDetection(OUTSIDE, "person", zones).keep, true);
   const verdict = keepDetection(INSIDE, "person", zones);
   assert.equal(verdict.keep, false);
-  assert.equal(verdict.keep === false && verdict.reason, "inside exclude zone 'Street'");
+  assert.equal(
+    verdict.keep === false && verdict.reason,
+    "inside exclude zone 'Street'",
+  );
 });
 
 test("keepDetection: failing every include zone names them all", () => {
   const zones = compileZones([
     zone({ name: "Driveway" }),
-    zone({ name: "Porch", points: [[0, 0], [10, 0], [10, 10], [0, 10]] }),
+    zone({
+      name: "Porch",
+      points: [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+      ],
+    }),
   ]);
   const verdict = keepDetection(OUTSIDE, "person", zones);
   assert.equal(verdict.keep, false);
@@ -144,4 +259,104 @@ test("keepDetection: failing every include zone names them all", () => {
     verdict.keep === false && verdict.reason,
     "outside include zone(s) 'Driveway', 'Porch'",
   );
+});
+
+test("decideObjectEvent: a deactivation is never filtered, however badly it fails the zones", () => {
+  // Load-bearing. Stop payloads carry no boxes of their own, and suppressing a
+  // Stop would leave the object sensor latched active forever.
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  const decision = decideObjectEvent(
+    {
+      kind: "object",
+      category: "person",
+      active: false,
+      detections: [{ box: OUTSIDE }],
+    },
+    zones,
+  );
+  assert.equal(decision.kind, "skipped");
+  assert.equal(decision.kind === "skipped" && decision.reason, "deactivation");
+  assert.equal(decision.kind === "skipped" && decision.detections.length, 1);
+});
+
+test("decideObjectEvent: an activation with no coordinates fails open", () => {
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  const decision = decideObjectEvent(
+    { kind: "object", category: "person", active: true },
+    zones,
+  );
+  assert.equal(decision.kind, "skipped");
+  assert.equal(
+    decision.kind === "skipped" && decision.reason,
+    "no-coordinates",
+  );
+});
+
+test("decideObjectEvent: reports only the detections that survive", () => {
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  const decision = decideObjectEvent(
+    {
+      kind: "object",
+      category: "person",
+      active: true,
+      detections: [
+        { box: INSIDE, trackId: 1 },
+        { box: OUTSIDE, trackId: 2 },
+      ],
+    },
+    zones,
+  );
+  assert.equal(decision.kind, "report");
+  assert.deepEqual(
+    decision.kind === "report" && decision.detections.map((d) => d.trackId),
+    [1],
+  );
+  assert.equal(decision.kind === "report" && decision.dropped.length, 1);
+});
+
+test("decideObjectEvent: suppresses when nothing survives", () => {
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  const decision = decideObjectEvent(
+    {
+      kind: "object",
+      category: "person",
+      active: true,
+      detections: [{ box: OUTSIDE }],
+    },
+    zones,
+  );
+  assert.equal(decision.kind, "suppress");
+  assert.deepEqual(decision.kind === "suppress" && decision.reasons, [
+    "outside include zone(s) 'Driveway'",
+  ]);
+});
+
+test("decideObjectEvent: momentary events are filtered the same way", () => {
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  const decision = decideObjectEvent(
+    {
+      kind: "object",
+      category: "person",
+      active: true,
+      momentary: true,
+      detections: [{ box: OUTSIDE }],
+    },
+    zones,
+  );
+  assert.equal(decision.kind, "suppress");
+});
+
+test("decideObjectEvent: with no zones, every activation reports unchanged", () => {
+  const decision = decideObjectEvent(
+    {
+      kind: "object",
+      category: "vehicle",
+      active: true,
+      detections: [{ box: OUTSIDE }],
+    },
+    [],
+  );
+  assert.equal(decision.kind, "report");
+  assert.equal(decision.kind === "report" && decision.detections.length, 1);
+  assert.equal(decision.kind === "report" && decision.dropped.length, 0);
 });
