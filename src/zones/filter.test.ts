@@ -213,6 +213,63 @@ test("keepDetection: a privacy mask drops a detection an include zone would have
   );
 });
 
+test("keepDetection: a privacy mask only masks the labels it is scoped to", () => {
+  // labels scopes all of a zone's behaviour, privacy masks included. A mask set
+  // to 'vehicle' is a vehicle mask; it must not silently hide people too.
+  const zones = compileZones([
+    zone({ name: "Road", isPrivacyMask: true, labels: ["vehicle"] }),
+  ]);
+  assert.equal(keepDetection(INSIDE, "vehicle", zones).keep, false);
+  assert.equal(keepDetection(INSIDE, "person", zones).keep, true);
+});
+
+// A person clipped at the bottom of frame: Amcrest coordinates at or past 8191
+// normalize to exactly 1.0, and a zone drawn to the edge of the picture
+// compiles to exactly 1.0 too. Both of the following used to fail open.
+const BOTTOM_CLIPPED = { x: 0.3, y: 0.55, width: 0.4, height: 0.45 };
+const RIGHT_CLIPPED = { x: 0.6, y: 0.2, width: 0.4, height: 0.3 };
+const FULL_FRAME_POINTS: DetectionZone["points"] = [
+  [0, 0],
+  [100, 0],
+  [100, 100],
+  [0, 100],
+];
+
+test("keepDetection: a full-frame privacy mask masks an object clipped at the frame edge", () => {
+  const zones = compileZones([
+    zone({
+      name: "Everything",
+      points: FULL_FRAME_POINTS,
+      isPrivacyMask: true,
+    }),
+  ]);
+  assert.equal(keepDetection(BOTTOM_CLIPPED, "person", zones).keep, false);
+  assert.equal(keepDetection(RIGHT_CLIPPED, "person", zones).keep, false);
+});
+
+test("keepDetection: a full-frame contain/exclude zone drops an object clipped at the frame edge", () => {
+  // The README's own recipe for "never alert me about vehicles", combined with
+  // its own recommendation to pair exclude with contain.
+  const zones = compileZones([
+    zone({
+      name: "No vehicles",
+      points: FULL_FRAME_POINTS,
+      type: "contain",
+      filter: "exclude",
+      labels: ["vehicle"],
+    }),
+  ]);
+  assert.equal(keepDetection(BOTTOM_CLIPPED, "vehicle", zones).keep, false);
+  assert.equal(keepDetection(RIGHT_CLIPPED, "vehicle", zones).keep, false);
+});
+
+test("keepDetection: a full-frame contain/include zone keeps a near-field object", () => {
+  const zones = compileZones([
+    zone({ name: "Everything", points: FULL_FRAME_POINTS, type: "contain" }),
+  ]);
+  assert.equal(keepDetection(BOTTOM_CLIPPED, "person", zones).keep, true);
+});
+
 test("keepDetection: matching any one of several include zones is enough", () => {
   const zones = compileZones([
     zone({
