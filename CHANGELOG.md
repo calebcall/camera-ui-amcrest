@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.0
+
+Detection zones drawn in camera.ui now apply to this plugin's object events. Previously they had no effect, which looked like a bug but was structural: camera.ui zone-filters detections inside its frame pipeline, and this plugin reports events straight from the camera, bypassing that pipeline entirely.
+
+- Objects: zones are read from the camera's own configuration and applied before a detection reaches the sensor. Full camera.ui semantics — `include`/`exclude`, `intersect`/`contain`, per-zone label filters and privacy masks. Nothing is written to the camera; zones are applied on the server side, so no device configuration is touched.
+- Objects: an event describing several objects now reports only those that survive its zones, so the bounding-box overlay shows the object that mattered rather than the one on the pavement.
+- Zone edits take effect immediately, without restarting the plugin.
+- Events that carry no coordinates are reported unfiltered rather than dropped, so a terse firmware payload never costs a real detection. This is logged once per event type at debug level when zones are drawn.
+- Suppressions are logged at debug level naming the responsible zone and the box that was tested, so a zone drawn in the wrong place is diagnosable rather than silently quiet.
+- Motion, audio and doorbell events are deliberately **not** filtered. Plain `VideoMotion` carries no coordinates, so there is nothing to test a zone against; keeping it unfiltered also leaves it usable as a cheap trigger for camera.ui's detection cascade, where a frame-based detector does the classifying and applies zones itself.
+- Add `npm run zone-fuzz`, a differential fuzz of zone containment against an independent oracle. Three correctness bugs were found this way while the unit suite was green, so it is kept as a regression net rather than discarded.
+
+With no zones drawn, behaviour is unchanged. Object types are filtered through a zone's labels — there is no separate per-camera setting — so to ignore vehicles everywhere, draw an `exclude` zone over the frame with its labels set to `vehicle`. See the README's new "Detection zones" section, in particular the guidance to prefer `intersect` for include zones and `contain` for exclude zones.
+
 ## 1.3.0
 
 - Streams: register every enabled stream the camera serves, not just main + the first substream. `ExtraFormat[0..2]` map to RTSP `subtype=1..3`; disabled slots are skipped. Roles are now assigned by resolution (largest → `high-resolution`, smallest → `low-resolution`, any third → `mid-resolution`) rather than by config position. If a camera serves more than three enabled streams, the extras are logged at adoption rather than dropped silently — camera.ui has only three streaming roles.
