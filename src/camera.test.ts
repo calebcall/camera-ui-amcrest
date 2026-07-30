@@ -50,6 +50,7 @@ interface CameraInternals {
     pulse(category: string, detections?: AmcrestDetection[]): void;
   };
   dispatchEvent(blob: string): void;
+  suppressedStarts: Map<string, string>;
 }
 
 /**
@@ -62,6 +63,7 @@ interface CameraInternals {
  */
 function harness(zones: DetectionZone[]): {
   dispatch: (blob: string) => void;
+  forget: () => void;
   calls: SensorCall[];
   debug: string[];
 } {
@@ -96,7 +98,12 @@ function harness(zones: DetectionZone[]): {
       calls.push({ method: "pulse", category, detections: detections ?? [] }),
   };
 
-  return { dispatch: (blob) => internals.dispatchEvent(blob), calls, debug };
+  return {
+    dispatch: (blob) => internals.dispatchEvent(blob),
+    forget: () => internals.suppressedStarts.clear(),
+    calls,
+    debug,
+  };
 }
 
 test("dispatchEvent: a suppressed activation never reaches the sensor", () => {
@@ -195,5 +202,128 @@ test("dispatchEvent: a boxless activation is warned about once, and only with zo
     withoutZones.debug,
     [],
     "with no zones drawn the warning describes a non-problem",
+  );
+});
+
+/** Two objects in one event: one inside the zone, one outside it. */
+const MIXED_HUMANS =
+  'Code=SmartMotionHuman;action=Start;index=0;data={"object":' +
+  '[{"Rect":[3000,3000,4000,4000],"HumanID":1},' +
+  '{"Rect":[7000,7000,7500,7500],"HumanID":2}]}';
+
+test("dispatchEvent: an object that enters the zones after a suppressed Start is logged, not alerted", () => {
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Start", OUTSIDE_RECT));
+  h.dispatch(human("Stop", INSIDE_RECT));
+
+  const hit = h.debug.find((l) =>
+    l.includes("entered the zones during the event"),
+  );
+  assert.ok(hit, `expected the walk-in line, got: ${JSON.stringify(h.debug)}`);
+  assert.ok(hit.includes("Stop box [0.37,0.37,0.12,0.12]"), hit);
+  assert.ok(
+    hit.includes(
+      "box [0.85,0.85,0.06,0.06] outside include zone(s) 'Driveway'",
+    ),
+    hit,
+  );
+
+  // Observation only. No activation was synthesised, and the deactivation still
+  // reported — exactly what 1.4.0 did.
+  assert.deepEqual(
+    h.calls.map((c) => ({ method: c.method, active: c.active })),
+    [{ method: "report", active: false }],
+  );
+});
+
+test("dispatchEvent: an object that stays outside the zones logs the miss, not the walk-in", () => {
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Start", OUTSIDE_RECT));
+  h.dispatch(human("Stop", OUTSIDE_RECT));
+
+  assert.ok(
+    h.debug.some((l) =>
+      l.includes("stayed outside the zones for the whole event"),
+    ),
+    `expected the miss line, got: ${JSON.stringify(h.debug)}`,
+  );
+  assert.ok(
+    !h.debug.some((l) => l.includes("entered the zones during the event")),
+  );
+});
+
+test("dispatchEvent: a coordinate-free Stop after a suppressed Start claims nothing either way", () => {
+  // Neither line is true here: with no position on the Stop, whether the object
+  // entered the zone is unknowable, and saying it stayed outside would be false.
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Start", OUTSIDE_RECT));
+  h.dispatch("Code=SmartMotionHuman;action=Stop;index=0");
+
+  assert.ok(
+    !h.debug.some((l) => l.includes("entered the zones during the event")),
+  );
+  assert.ok(!h.debug.some((l) => l.includes("stayed outside the zones")));
+});
+
+test("dispatchEvent: a suppressed Pulse is not remembered, so a later Stop says nothing about it", () => {
+  // A Pulse never receives a matching Stop. Remembering one would leave an entry
+  // that an unrelated later Stop would wrongly be measured against.
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Pulse", OUTSIDE_RECT));
+  h.dispatch(human("Stop", INSIDE_RECT));
+
+  assert.ok(
+    !h.debug.some((l) => l.includes("entered the zones during the event")),
+  );
+  assert.ok(!h.debug.some((l) => l.includes("stayed outside the zones")));
+});
+
+test("dispatchEvent: a cleanly passing activation says so", () => {
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Start", INSIDE_RECT));
+
+  assert.ok(
+    h.debug.some(
+      (l) =>
+        l.includes("passed detection zones (1 zone(s))") &&
+        l.includes("box [0.37,0.37,0.12,0.12]"),
+    ),
+    `expected the pass-through line, got: ${JSON.stringify(h.debug)}`,
+  );
+});
+
+test("dispatchEvent: a partially filtered event reports the partial line, not the pass line", () => {
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(MIXED_HUMANS);
+
+  assert.ok(
+    h.debug.some((l) => l.includes("partially filtered by detection zones")),
+    `expected the partial line, got: ${JSON.stringify(h.debug)}`,
+  );
+  assert.ok(
+    !h.debug.some((l) => l.includes("passed detection zones")),
+    "the partial line already names what was dropped; the pass line would duplicate it",
+  );
+  assert.equal(h.calls[0].detections.length, 1);
+  assert.equal(h.calls[0].detections[0].trackId, 1);
+});
+
+test("dispatchEvent: a suppression forgotten on reconnect is not measured against a later Stop", () => {
+  // What runEventLoop does when the stream drops: track continuity is gone, so a
+  // pending suppression must not be paired with an unrelated Stop minutes later.
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Start", OUTSIDE_RECT));
+  h.forget();
+  h.dispatch(human("Stop", INSIDE_RECT));
+
+  assert.ok(
+    !h.debug.some((l) => l.includes("entered the zones during the event")),
   );
 });
