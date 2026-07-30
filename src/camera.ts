@@ -424,6 +424,11 @@ export class AmcrestCamera {
           if (!c.momentary) this.suppressedStarts.set(c.category, reason);
           break;
         }
+        // Any later activation of this category alerts, so an earlier pending
+        // suppression can no longer be reported as "no alert was sent". Guarded
+        // on `active` because the deactivation path owns the entry and clears it
+        // itself; boxless activations are `active` too and are equally stale.
+        if (c.active) this.suppressedStarts.delete(c.category);
         if (
           decision.kind === 'skipped' &&
           decision.reason === 'no-coordinates'

@@ -392,3 +392,39 @@ test("dispatchEvent: deleting every zone between Start and Stop says nothing abo
     `no zones drawn means nothing to say: ${JSON.stringify(h.debug)}`,
   );
 });
+
+test("dispatchEvent: a suppression is forgotten once a later activation of the same category alerts", () => {
+  // Sidewalk person suppressed, driveway person alerts, driveway person leaves.
+  // An alert *was* sent, so the walk-in line would be false — and its "would
+  // pass" box belongs to the object that already alerted.
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Start", OUTSIDE_RECT));
+  h.dispatch(human("Start", INSIDE_RECT));
+  h.dispatch(human("Stop", INSIDE_RECT));
+
+  assert.deepEqual(
+    walkInLines(h.debug),
+    [],
+    `an alert was sent, so nothing may claim otherwise: ${JSON.stringify(h.debug)}`,
+  );
+  assert.deepEqual(
+    h.calls.map((c) => ({ method: c.method, active: c.active })),
+    [
+      { method: "report", active: true },
+      { method: "report", active: false },
+    ],
+    "sensor calls stay identical to 1.4.0",
+  );
+});
+
+test("dispatchEvent: a boxless activation also forgets an earlier suppression", () => {
+  // The boxless path reports unfiltered, so it alerts too. Same false claim.
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Start", OUTSIDE_RECT));
+  h.dispatch("Code=SmartMotionHuman;action=Start;index=0");
+  h.dispatch(human("Stop", INSIDE_RECT));
+
+  assert.deepEqual(walkInLines(h.debug), [], JSON.stringify(h.debug));
+});
