@@ -509,7 +509,14 @@ export class AmcrestCamera {
 
     // A Stop with no position cannot answer the question either way, and
     // claiming the object stayed outside would put a false statement in the log.
-    if (!hasUsableCoordinates(detections)) return;
+    // Saying so explicitly keeps the log decidable: silence here would be
+    // indistinguishable from "walk-ins never happen".
+    if (!hasUsableCoordinates(detections)) {
+      this.log.debug(
+        `${code} left without coordinates — cannot tell whether it entered the zones`,
+      );
+      return;
+    }
 
     const kept = findKeptDetection(detections, category, this.zones);
     if (!kept) {

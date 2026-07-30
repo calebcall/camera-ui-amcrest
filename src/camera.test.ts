@@ -259,14 +259,24 @@ test("dispatchEvent: an object that stays outside the zones logs the miss, not t
   );
 });
 
-test("dispatchEvent: a coordinate-free Stop after a suppressed Start claims nothing either way", () => {
-  // Neither line is true here: with no position on the Stop, whether the object
-  // entered the zone is unknowable, and saying it stayed outside would be false.
+test("dispatchEvent: a coordinate-free Stop after a suppressed Start says only that it cannot tell", () => {
+  // Neither of the other two lines is true here: with no position on the Stop,
+  // whether the object entered the zone is unknowable, and saying it stayed
+  // outside would be false. Saying so keeps the log decidable — silence would be
+  // indistinguishable from "walk-ins never happen".
   const h = harness([DRIVEWAY]);
 
   h.dispatch(human("Start", OUTSIDE_RECT));
   h.dispatch("Code=SmartMotionHuman;action=Stop;index=0");
 
+  assert.ok(
+    h.debug.some((l) =>
+      l.includes(
+        "left without coordinates — cannot tell whether it entered the zones",
+      ),
+    ),
+    `expected the cannot-tell line, got: ${JSON.stringify(h.debug)}`,
+  );
   assert.ok(
     !h.debug.some((l) => l.includes("entered the zones during the event")),
   );

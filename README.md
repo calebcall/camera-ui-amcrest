@@ -96,14 +96,17 @@ Detection zones updated: 2 zone(s)
 
 The first line is the one to look for when you are checking that a zone works at all: a detection that passes cleanly says so, naming the box it was tested with. Without it, a working zone looks the same in the log as no zone at all.
 
-Two more lines describe what happened to a suppressed object by the time it left:
+Three more lines describe what happened to a suppressed object by the time it left:
 
 ```
 SmartMotionVehicle stayed outside the zones for the whole event — correctly suppressed
 SmartMotionHuman entered the zones during the event — no alert was sent (see #26). Stop box [0.15,0.72,0.18,0.28] would pass; Start was suppressed: box [0.55,0.29,0.08,0.37] outside include zone(s) 'Driveway'
+SmartMotionHuman left without coordinates — cannot tell whether it entered the zones
 ```
 
 The second is the limitation above, caught in the act. If you see it often, the boxes tell you where — and enlarging the zone to cover the first-detection position usually fixes it.
+
+The third appears when the "stopped" event carries no position at all: nothing can be concluded either way, and it is said explicitly so that a quiet log means "this is not happening to you" rather than "this could never be measured".
 
 Editing your zones ends any of these that are still pending. A suppression recorded against the old zones cannot be judged against the new ones, so the object that was in flight when you saved goes unreported rather than being described using two different zone lists.
 
