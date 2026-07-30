@@ -99,8 +99,15 @@ export class AmcrestCamera {
    * Categories whose activation the zones suppressed, keyed to the reason,
    * awaiting a Stop that might show the object moved into a zone after all.
    * Bounded at two entries (person, vehicle). See reviewSuppressedStart.
+   *
+   * Keyed by category, not by track, so the pairing is best-effort: two
+   * overlapping tracks of the same category will pair the first Stop with the
+   * second track's reason. That matches the rest of the pipeline — the object
+   * sensor is category-keyed too — and this is observation only, so a wider
+   * mechanism is not worth the divergence. `AmcrestDetection.trackId` is
+   * available if the logged data ever shows the mispairing matters.
    */
-  private readonly suppressedStarts = new Map<string, string>();
+  private readonly suppressedStarts = new Map<DetectionLabel, string>();
 
   private eventAbort?: AbortController;
   private eventReconnectStreak = 0;

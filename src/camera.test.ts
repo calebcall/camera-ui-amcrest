@@ -6,7 +6,11 @@ import { compileZones } from "./zones/filter.js";
 
 import type { AmcrestDetection } from "./amcrest/classify.js";
 import type { CompiledZone } from "./zones/filter.js";
-import type { CameraDevice, DetectionZone } from "@camera.ui/sdk";
+import type {
+  CameraDevice,
+  DetectionLabel,
+  DetectionZone,
+} from "@camera.ui/sdk";
 
 /** A 0.2-0.8 include/intersect square. */
 const DRIVEWAY: DetectionZone = {
@@ -51,7 +55,7 @@ interface CameraInternals {
   };
   dispatchEvent(blob: string): void;
   applyDetectionZones(zones: DetectionZone[]): void;
-  suppressedStarts: Map<string, string>;
+  suppressedStarts: Map<DetectionLabel, string>;
 }
 
 /**
@@ -437,4 +441,20 @@ test("dispatchEvent: a boxless activation also forgets an earlier suppression", 
   h.dispatch(human("Stop", INSIDE_RECT));
 
   assert.deepEqual(walkInLines(h.debug), [], JSON.stringify(h.debug));
+});
+
+test("dispatchEvent: two suppressed Starts for one category still produce a single line", () => {
+  // The map is category-keyed while the events are per-track, so overlapping
+  // same-category tracks pair best-effort. Pinned so it cannot change silently.
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Start", OUTSIDE_RECT));
+  h.dispatch(human("Start", OUTSIDE_RECT));
+  h.dispatch(human("Stop", INSIDE_RECT));
+
+  assert.equal(
+    walkInLines(h.debug).length,
+    1,
+    `one Stop resolves at most one pending suppression: ${JSON.stringify(h.debug)}`,
+  );
 });
