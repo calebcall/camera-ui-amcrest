@@ -20,15 +20,18 @@ import {
   AmcrestObjectSensor,
   AmcrestPTZSensor,
 } from './sensors/index.js';
+import { compileZones, decideObjectEvent } from './zones/filter.js';
 
 import type {
   AmcrestCapabilities,
   AmcrestCameraStorage,
   AmcrestInitialSettings,
 } from './types.js';
+import type { CompiledZone } from './zones/filter.js';
 import type {
   CameraDevice,
   DeviceStorage,
+  Disposable,
   LoggerService,
   SnapshotInterface,
   StreamingInterface,
@@ -78,6 +81,11 @@ export class AmcrestCamera {
   private audio?: AmcrestAudioSensor;
   private doorbell?: AmcrestDoorbellTrigger;
   private ptz?: AmcrestPTZSensor;
+
+  private zones: CompiledZone[] = [];
+  private zonesSub?: Disposable;
+  /** `${code}:${category}` pairs already warned about; see warnBoxless. */
+  private readonly boxlessWarned = new Set<string>();
 
   private eventAbort?: AbortController;
   private eventReconnectStreak = 0;
@@ -139,6 +147,13 @@ export class AmcrestCamera {
     await this.setupStreaming();
     await this.cameraDevice.implement(new Implementations(this));
     await this.setupSensors();
+    this.zones = compileZones(this.cameraDevice.detectionZones ?? []);
+    this.zonesSub = this.cameraDevice
+      .onPropertyChange('detectionZones')
+      .subscribe(({ newData }) => {
+        this.zones = compileZones(newData ?? []);
+        this.log.debug(`Detection zones updated: ${this.zones.length} zone(s)`);
+      });
     this.startEventLoop();
     this.cameraDevice.connect();
   }
@@ -176,6 +191,8 @@ export class AmcrestCamera {
       this.reconnectTimer = undefined;
     }
     this.eventAbort?.abort();
+    this.zonesSub?.dispose();
+    this.zonesSub = undefined;
     this.object?.destroy();
     this.resetTalkback();
     void this.rtspServer?.shutdown();
@@ -381,17 +398,51 @@ export class AmcrestCamera {
       case 'audio':
         this.audio?.report(c.active);
         break;
-      case 'object':
+      case 'object': {
+        const decision = decideObjectEvent(c, this.zones);
+        if (decision.kind === 'suppress') {
+          this.log.debug(
+            `${ev.code} suppressed by detection zones: ${decision.reasons.join('; ')}`,
+          );
+          break;
+        }
+        if (
+          decision.kind === 'skipped' &&
+          decision.reason === 'no-coordinates'
+        ) {
+          this.warnBoxless(ev.code, c.category);
+        }
+        if (decision.kind === 'report' && decision.dropped.length > 0) {
+          this.log.debug(
+            `${ev.code} partially filtered by detection zones: ${decision.dropped.join('; ')}`,
+          );
+        }
         if (c.momentary) {
-          this.object?.pulse(c.category, c.detections);
+          this.object?.pulse(c.category, decision.detections);
         } else {
-          this.object?.report(c.category, c.active, c.detections);
+          this.object?.report(c.category, c.active, decision.detections);
         }
         break;
+      }
       case 'doorbell':
         this.doorbell?.trigger();
         break;
     }
+  }
+
+  /**
+   * Warns once per code+category that an event arrived without coordinates, so
+   * detection zones could not be applied to it. Only worth saying when the user
+   * has actually drawn zones — otherwise it describes a non-problem.
+   */
+  private warnBoxless(code: string, category: string): void {
+    if (this.zones.length === 0) return;
+    const key = `${code}:${category}`;
+    if (this.boxlessWarned.has(key)) return;
+    this.boxlessWarned.add(key);
+    this.log.debug(
+      `${code} (${category}) carried no coordinates, so detection zones cannot be applied to it — it is reported unfiltered. Further occurrences are not logged.`,
+    );
   }
 
   private createRelayLogger(): Logger {
