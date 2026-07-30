@@ -20,8 +20,15 @@ import {
   AmcrestObjectSensor,
   AmcrestPTZSensor,
 } from './sensors/index.js';
-import { compileZones, decideObjectEvent } from './zones/filter.js';
+import {
+  compileZones,
+  decideObjectEvent,
+  describeBox,
+  findKeptDetection,
+  hasUsableCoordinates,
+} from './zones/filter.js';
 
+import type { AmcrestDetection } from './amcrest/classify.js';
 import type {
   AmcrestCapabilities,
   AmcrestCameraStorage,
@@ -30,6 +37,8 @@ import type {
 import type { CompiledZone } from './zones/filter.js';
 import type {
   CameraDevice,
+  DetectionLabel,
+  DetectionZone,
   DeviceStorage,
   Disposable,
   LoggerService,
@@ -86,6 +95,19 @@ export class AmcrestCamera {
   private zonesSub?: Disposable;
   /** `${code}:${category}` pairs already warned about; see warnBoxless. */
   private readonly boxlessWarned = new Set<string>();
+  /**
+   * Categories whose activation the zones suppressed, keyed to the reason,
+   * awaiting a Stop that might show the object moved into a zone after all.
+   * Bounded at two entries (person, vehicle). See reviewSuppressedStart.
+   *
+   * Keyed by category, not by track, so the pairing is best-effort: two
+   * overlapping tracks of the same category will pair the first Stop with the
+   * second track's reason. That matches the rest of the pipeline — the object
+   * sensor is category-keyed too — and this is observation only, so a wider
+   * mechanism is not worth the divergence. `AmcrestDetection.trackId` is
+   * available if the logged data ever shows the mispairing matters.
+   */
+  private readonly suppressedStarts = new Map<DetectionLabel, string>();
 
   private eventAbort?: AbortController;
   private eventReconnectStreak = 0;
@@ -150,10 +172,7 @@ export class AmcrestCamera {
     this.zones = compileZones(this.cameraDevice.detectionZones ?? []);
     this.zonesSub = this.cameraDevice
       .onPropertyChange('detectionZones')
-      .subscribe(({ newData }) => {
-        this.zones = compileZones(newData ?? []);
-        this.log.debug(`Detection zones updated: ${this.zones.length} zone(s)`);
-      });
+      .subscribe(({ newData }) => this.applyDetectionZones(newData ?? []));
     this.startEventLoop();
     this.cameraDevice.connect();
   }
@@ -193,6 +212,7 @@ export class AmcrestCamera {
     this.eventAbort?.abort();
     this.zonesSub?.dispose();
     this.zonesSub = undefined;
+    this.suppressedStarts.clear();
     this.object?.destroy();
     this.resetTalkback();
     void this.rtspServer?.shutdown();
@@ -366,6 +386,9 @@ export class AmcrestCamera {
       this.log.debug('Amcrest event stream error:', error);
     }
     if (signal.aborted || this.stopped) return;
+    // Track continuity ends with the stream, so a pending suppression must not
+    // be paired with an unrelated Stop after we reconnect.
+    this.suppressedStarts.clear();
     this.eventReconnectStreak++;
     const delay = Math.min(
       EVENT_RECONNECT_BASE_MS * 2 ** (this.eventReconnectStreak - 1),
@@ -401,21 +424,34 @@ export class AmcrestCamera {
       case 'object': {
         const decision = decideObjectEvent(c, this.zones);
         if (decision.kind === 'suppress') {
-          this.log.debug(
-            `${ev.code} suppressed by detection zones: ${decision.reasons.join('; ')}`,
-          );
+          const reason = decision.reasons.join('; ');
+          this.log.debug(`${ev.code} suppressed by detection zones: ${reason}`);
+          // A Pulse never gets a matching Stop, so there would be nothing to
+          // reconsider this against and the entry would never clear.
+          if (!c.momentary) this.suppressedStarts.set(c.category, reason);
           break;
         }
+        // Any later activation of this category alerts, so an earlier pending
+        // suppression can no longer be reported as "no alert was sent". Guarded
+        // on `active` because the deactivation path owns the entry and clears it
+        // itself; boxless activations are `active` too and are equally stale.
+        if (c.active) this.suppressedStarts.delete(c.category);
         if (
           decision.kind === 'skipped' &&
           decision.reason === 'no-coordinates'
         ) {
           this.warnBoxless(ev.code, c.category);
         }
+        if (decision.kind === 'skipped' && decision.reason === 'deactivation') {
+          this.reviewSuppressedStart(ev.code, c.category, decision.detections);
+        }
         if (decision.kind === 'report' && decision.dropped.length > 0) {
           this.log.debug(
             `${ev.code} partially filtered by detection zones: ${decision.dropped.join('; ')}`,
           );
+        }
+        if (decision.kind === 'report' && decision.dropped.length === 0) {
+          this.logZonePass(ev.code, decision.detections);
         }
         if (c.momentary) {
           this.object?.pulse(c.category, decision.detections);
@@ -431,6 +467,21 @@ export class AmcrestCamera {
   }
 
   /**
+   * Adopts a new zone list. Separate from the subscriber so the behaviour that
+   * depends on it is testable without a live camera.
+   *
+   * Any pending suppression is forgotten: its recorded reason describes the
+   * zones as they were, and measuring a Stop against the new ones would claim
+   * the same box both failed and passed. Same rationale as the reconnect clear
+   * in runEventLoop — the premise the entry rests on no longer holds.
+   */
+  private applyDetectionZones(zones: DetectionZone[]): void {
+    this.zones = compileZones(zones);
+    this.suppressedStarts.clear();
+    this.log.debug(`Detection zones updated: ${this.zones.length} zone(s)`);
+  }
+
+  /**
    * Warns once per code+category that an event arrived without coordinates, so
    * detection zones could not be applied to it. Only worth saying when the user
    * has actually drawn zones — otherwise it describes a non-problem.
@@ -442,6 +493,60 @@ export class AmcrestCamera {
     this.boxlessWarned.add(key);
     this.log.debug(
       `${code} (${category}) carried no coordinates, so detection zones cannot be applied to it — it is reported unfiltered. Further occurrences are not logged.`,
+    );
+  }
+
+  /**
+   * Says whether an object whose activation the zones suppressed had, by the
+   * time it left, moved somewhere those zones would have accepted.
+   *
+   * Observation only — see #26. The camera sends one Start and one Stop per
+   * track with nothing in between, and the two boxes can be entirely disjoint,
+   * so an object that walks into a zone after its Start produces no alert. This
+   * records how often that happens, and where, without changing behaviour.
+   */
+  private reviewSuppressedStart(
+    code: string,
+    category: DetectionLabel,
+    detections: AmcrestDetection[],
+  ): void {
+    const reason = this.suppressedStarts.get(category);
+    if (reason === undefined) return;
+    this.suppressedStarts.delete(category);
+
+    // A Stop with no position cannot answer the question either way, and
+    // claiming the object stayed outside would put a false statement in the log.
+    // Saying so explicitly keeps the log decidable: silence here would be
+    // indistinguishable from "walk-ins never happen".
+    if (!hasUsableCoordinates(detections)) {
+      this.log.debug(
+        `${code} left without coordinates — cannot tell whether it entered the zones`,
+      );
+      return;
+    }
+
+    const kept = findKeptDetection(detections, category, this.zones);
+    if (!kept) {
+      this.log.debug(
+        `${code} stayed outside the zones for the whole event — correctly suppressed`,
+      );
+      return;
+    }
+    this.log.debug(
+      `${code} entered the zones during the event — no alert was sent (see #26). Stop ${describeBox(kept.box)} would pass; Start was suppressed: ${reason}`,
+    );
+  }
+
+  /**
+   * Confirms zone evaluation ran and every detection survived. Without this, a
+   * working zone is indistinguishable in the log from no zones at all — both
+   * produce a notification and silence. See #27.
+   */
+  private logZonePass(code: string, detections: AmcrestDetection[]): void {
+    if (this.zones.length === 0) return;
+    const boxes = detections.map((d) => describeBox(d.box)).join(', ');
+    this.log.debug(
+      `${code} passed detection zones (${this.zones.length} zone(s)): ${boxes}`,
     );
   }
 

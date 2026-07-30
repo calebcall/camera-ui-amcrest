@@ -93,7 +93,7 @@ const BOX_LOG_PRECISION = 2;
  * was and not merely which zone objected. Fixed precision on purpose: raw
  * floats print as 0.7100000000000001 and make the line unreadable.
  */
-function describeBox(box: BoundingBox): string {
+export function describeBox(box: BoundingBox): string {
   const n = (v: number): string => v.toFixed(BOX_LOG_PRECISION);
   return `box [${n(box.x)},${n(box.y)},${n(box.width)},${n(box.height)}]`;
 }
@@ -187,6 +187,29 @@ function hasCoordinates(detection: AmcrestDetection): boolean {
 }
 
 /**
+ * True if any of these detections carries a usable position. Wraps the
+ * per-detection test so callers outside this module can ask the same question
+ * the gating path asks, rather than reimplementing it and drifting.
+ */
+export function hasUsableCoordinates(detections: AmcrestDetection[]): boolean {
+  return detections.some(hasCoordinates);
+}
+
+/**
+ * The first detection these zones would keep, or undefined if none would.
+ *
+ * Returns the detection rather than a boolean so a caller can name the box that
+ * qualified — the walk-in log line in `camera.ts` reports it.
+ */
+export function findKeptDetection(
+  detections: AmcrestDetection[],
+  label: DetectionLabel,
+  zones: CompiledZone[],
+): AmcrestDetection | undefined {
+  return detections.find((d) => keepDetection(d.box, label, zones).keep);
+}
+
+/**
  * Applies the camera's detection zones to a classified object event.
  *
  * Deactivations and coordinate-free activations deliberately bypass filtering;
@@ -213,7 +236,7 @@ export function decideObjectEvent(
   // a placeholder Rect of [0,0,0,0]; both mean "no position", and a terse
   // payload must never cost a real person detection. A zero-area box would
   // otherwise fail every include zone and be suppressed.
-  if (!detections.some(hasCoordinates)) {
+  if (!hasUsableCoordinates(detections)) {
     return { kind: 'skipped', detections, reason: 'no-coordinates' };
   }
 

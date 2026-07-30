@@ -68,7 +68,7 @@ Object types are filtered by the same mechanism: a zone's **labels** decide whic
 
 **Recommended: `intersect` for include zones, `contain` for exclude zones.**
 
-`contain` combined with `include` is the strict pairing, and it misfires in two common ways:
+`contain` combined with `include` is the strict pairing, and on this hardware it will miss almost anything that does not begin wholly inside the zone. Because the camera reports an object's position only once, at first detection, that single sample has to satisfy the whole zone. It misfires in two common ways:
 
 - Someone entering from the edge of frame is only partly inside the zone at first, so they do not alert until they are wholly within it.
 - Someone close to the camera has a large bounding box. If your zone is a modest patch of driveway, that box may never fit wholly inside it, so they never alert even while standing in the middle of the zone.
@@ -77,17 +77,38 @@ Object types are filtered by the same mechanism: a zone's **labels** decide whic
 
 ### Known limitation
 
-Filtering uses the position reported when the camera first detects the object. If someone is first picked up outside your zone and then walks into it, and your camera does not re-report that object as it moves, no alert is produced. Prefer `intersect` include zones drawn a little larger than the area you care about.
+Filtering uses the position reported when the camera first detects the object, because that is the only position available. The camera sends exactly one "started" and one "stopped" event per object, 30–60 seconds apart, with no updates in between — and the two positions can describe completely different parts of the frame. In one measured case a person was first seen in the upper middle of the picture and last seen in the lower left, with no overlap between the two.
+
+So if someone is first picked up outside your zone and then walks into it, **no alert is produced**. Draw `intersect` include zones generously larger than the area you actually care about, so that the object's _first_ detection already falls inside them.
+
+Enable debug logging to see whether this is happening to you — see [Checking what is being filtered](#checking-what-is-being-filtered) below.
 
 ### Checking what is being filtered
 
 Enable debug logging in camera.ui and look for:
 
 ```
-SmartMotionHuman suppressed by detection zones: box [0.85,0.85,0.06,0.06] outside include zone(s) 'Driveway'
-SmartMotionVehicle partially filtered by detection zones: box [0.12,0.61,0.30,0.24] inside exclude zone 'Street'
+SmartMotionHuman passed detection zones (1 zone(s)): box [0.38,0.32,0.10,0.51]
+SmartMotionHuman suppressed by detection zones: box [0.38,0.11,0.05,0.05] outside include zone(s) 'Driveway'
+SmartMotionVehicle partially filtered by detection zones: box [0.71,0.33,0.09,0.21] inside exclude zone 'Street'
 Detection zones updated: 2 zone(s)
 ```
+
+The first line is the one to look for when you are checking that a zone works at all: a detection that passes cleanly says so, naming the box it was tested with. Without it, a working zone looks the same in the log as no zone at all.
+
+Three more lines describe what happened to a suppressed object by the time it left:
+
+```
+SmartMotionVehicle stayed outside the zones for the whole event — correctly suppressed
+SmartMotionHuman entered the zones during the event — no alert was sent (see #26). Stop box [0.15,0.72,0.18,0.28] would pass; Start was suppressed: box [0.55,0.29,0.08,0.37] outside include zone(s) 'Driveway'
+SmartMotionHuman left without coordinates — cannot tell whether it entered the zones
+```
+
+The second is the limitation above, caught in the act. If you see it often, the boxes tell you where — and enlarging the zone to cover the first-detection position usually fixes it.
+
+The third appears when the "stopped" event carries no position at all: nothing can be concluded either way, and it is said explicitly so that a quiet log means "this is not happening to you" rather than "this could never be measured".
+
+Editing your zones ends any of these that are still pending. A suppression recorded against the old zones cannot be judged against the new ones, so the object that was in flight when you saved goes unreported rather than being described using two different zone lists.
 
 The `box` is the detection's position as `[x, y, width, height]`, in fractions of the frame from the top-left corner. It tells you whether the zone or the camera's own coordinates are the surprise — a value of `1.00` on an edge means the object was clipped at the edge of frame.
 

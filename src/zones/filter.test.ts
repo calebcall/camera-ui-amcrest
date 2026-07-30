@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { compileZones, decideObjectEvent, keepDetection } from "./filter.js";
+import {
+  compileZones,
+  decideObjectEvent,
+  findKeptDetection,
+  hasUsableCoordinates,
+  keepDetection,
+} from "./filter.js";
 
 import type { DetectionZone } from "@camera.ui/sdk";
 
@@ -605,4 +611,58 @@ test("decideObjectEvent: a reversed box is filtered, not treated as coordinate-f
     zones,
   );
   assert.equal(decision.kind, "suppress");
+});
+
+test("findKeptDetection returns the first detection the zones keep", () => {
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  const kept = findKeptDetection(
+    [{ box: OUTSIDE }, { box: INSIDE, trackId: 9 }],
+    "person",
+    zones,
+  );
+  assert.equal(kept?.trackId, 9);
+});
+
+test("findKeptDetection returns undefined when the zones keep none", () => {
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  assert.equal(
+    findKeptDetection([{ box: OUTSIDE }], "person", zones),
+    undefined,
+  );
+});
+
+test("findKeptDetection keeps the first detection when there are no zones", () => {
+  // No zones means nothing gates, so the first detection qualifies.
+  const kept = findKeptDetection([{ box: OUTSIDE, trackId: 3 }], "person", []);
+  assert.equal(kept?.trackId, 3);
+});
+
+test("findKeptDetection returns undefined for an empty detection list", () => {
+  const zones = compileZones([zone({ name: "Driveway" })]);
+  assert.equal(findKeptDetection([], "person", zones), undefined);
+});
+
+test("hasUsableCoordinates rejects an empty list and zero-area boxes", () => {
+  assert.equal(hasUsableCoordinates([]), false);
+  assert.equal(
+    hasUsableCoordinates([{ box: { x: 0.1, y: 0.1, width: 0, height: 0.2 } }]),
+    false,
+  );
+  assert.equal(
+    hasUsableCoordinates([
+      { box: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 } },
+    ]),
+    true,
+  );
+});
+
+test("hasUsableCoordinates accepts a reversed box", () => {
+  // geometry.ts normalizes reversed extents, so a back-to-front Rect carries a
+  // real position and must not be mistaken for a coordinate-free payload.
+  assert.equal(
+    hasUsableCoordinates([
+      { box: { x: 0.9, y: 0.9, width: -0.1, height: -0.1 } },
+    ]),
+    true,
+  );
 });
