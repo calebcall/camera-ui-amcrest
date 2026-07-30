@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.0
+
+Makes two detection-zone outcomes visible in the log. No behaviour change: every detection reported to camera.ui is exactly what 1.4.0 reported, and zones continue to filter exactly as before.
+
+- Zones: a detection that passes its zones cleanly now says so at debug level, naming the box it was tested against. Previously it logged nothing, which was indistinguishable from zones not being applied at all — confirming a zone worked meant deliberately drawing it somewhere the object would not be, to force a suppression.
+- Zones: when an object's detection is suppressed and it has moved somewhere the zones would accept by the time it leaves, that is now logged with both positions and the original reason. **The alert is still not sent** — this records how often the situation arises, and where, so the case for acting on it can be made from data rather than guesswork.
+- Zones: an object that stays outside for the whole event says so too, so a quiet log is not ambiguous between "this never happens" and "the instrumentation is broken". Where the camera reports no position on the way out, the log says the question cannot be answered rather than guessing.
+- Docs: the walk-in limitation is now stated as fact rather than as something conditional on firmware behaviour. Real captures settled it — the camera sends exactly one "started" and one "stopped" event per object, 30–60 seconds apart, with no updates in between, and the two positions can describe completely different parts of the frame. Zones are therefore matched against an object's *first* detection only.
+- Docs: the guidance on `contain` include zones is correspondingly stronger. Because position is reported once, such a zone will miss almost anything that does not begin wholly inside it. Prefer `intersect` include zones drawn generously larger than the area you care about.
+
+If you have zones drawn, enable debug logging for a week and look for `entered the zones during the event`. Its frequency, and the positions it reports, are what decide whether this is worth fixing properly — and the positions may simply show that enlarging the zone is enough.
+
 ## 1.4.0
 
 **Node 24 or newer is now required** (`engines.node` was previously `>=22.0.0`). This corrects a declaration that was already wrong rather than imposing something new: `@seydx/rtsp`, which the plugin imports for RTSP relay and talkback, ships explicit-resource-management syntax (`for await (using x of y)`) that Node 22 cannot parse. On Node 22 the plugin has therefore failed to load at all since 1.3.0 — the requirement was real, only undeclared. Anyone on Node 22 now gets a clear engine error at install instead of an unexplained crash.
