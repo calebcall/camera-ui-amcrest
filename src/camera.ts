@@ -38,6 +38,7 @@ import type { CompiledZone } from './zones/filter.js';
 import type {
   CameraDevice,
   DetectionLabel,
+  DetectionZone,
   DeviceStorage,
   Disposable,
   LoggerService,
@@ -164,10 +165,7 @@ export class AmcrestCamera {
     this.zones = compileZones(this.cameraDevice.detectionZones ?? []);
     this.zonesSub = this.cameraDevice
       .onPropertyChange('detectionZones')
-      .subscribe(({ newData }) => {
-        this.zones = compileZones(newData ?? []);
-        this.log.debug(`Detection zones updated: ${this.zones.length} zone(s)`);
-      });
+      .subscribe(({ newData }) => this.applyDetectionZones(newData ?? []));
     this.startEventLoop();
     this.cameraDevice.connect();
   }
@@ -454,6 +452,21 @@ export class AmcrestCamera {
         this.doorbell?.trigger();
         break;
     }
+  }
+
+  /**
+   * Adopts a new zone list. Separate from the subscriber so the behaviour that
+   * depends on it is testable without a live camera.
+   *
+   * Any pending suppression is forgotten: its recorded reason describes the
+   * zones as they were, and measuring a Stop against the new ones would claim
+   * the same box both failed and passed. Same rationale as the reconnect clear
+   * in runEventLoop — the premise the entry rests on no longer holds.
+   */
+  private applyDetectionZones(zones: DetectionZone[]): void {
+    this.zones = compileZones(zones);
+    this.suppressedStarts.clear();
+    this.log.debug(`Detection zones updated: ${this.zones.length} zone(s)`);
   }
 
   /**

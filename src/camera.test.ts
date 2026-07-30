@@ -50,6 +50,7 @@ interface CameraInternals {
     pulse(category: string, detections?: AmcrestDetection[]): void;
   };
   dispatchEvent(blob: string): void;
+  applyDetectionZones(zones: DetectionZone[]): void;
   suppressedStarts: Map<string, string>;
 }
 
@@ -64,6 +65,7 @@ interface CameraInternals {
 function harness(zones: DetectionZone[]): {
   dispatch: (blob: string) => void;
   forget: () => void;
+  setZones: (zones: DetectionZone[]) => void;
   calls: SensorCall[];
   debug: string[];
 } {
@@ -101,6 +103,9 @@ function harness(zones: DetectionZone[]): {
   return {
     dispatch: (blob) => internals.dispatchEvent(blob),
     forget: () => internals.suppressedStarts.clear(),
+    // The real code path the detectionZones subscriber runs, so a test can edit
+    // the zone list exactly as a user would mid-event.
+    setZones: (next) => internals.applyDetectionZones(next),
     calls,
     debug,
   };
@@ -325,5 +330,65 @@ test("dispatchEvent: a suppression forgotten on reconnect is not measured agains
 
   assert.ok(
     !h.debug.some((l) => l.includes("entered the zones during the event")),
+  );
+});
+
+/** Every zone verdict flips if this replaces DRIVEWAY: it accepts the frame. */
+const WHOLE_FRAME: DetectionZone = {
+  ...DRIVEWAY,
+  name: "Everywhere",
+  points: [
+    [0, 0],
+    [100, 0],
+    [100, 100],
+    [0, 100],
+  ],
+};
+
+/** The three lines reviewSuppressedStart can emit about a pending suppression. */
+function walkInLines(debug: string[]): string[] {
+  return debug.filter(
+    (l) =>
+      l.includes("entered the zones during the event") ||
+      l.includes("stayed outside the zones") ||
+      l.includes("cannot tell whether it entered the zones"),
+  );
+}
+
+test("dispatchEvent: a zone edit between Start and Stop forgets the suppression instead of contradicting it", () => {
+  // The recorded reason describes the zones as they were at the Start. Judging
+  // the Stop against the enlarged list would claim the identical box both failed
+  // and passed, for an object that never moved.
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Start", OUTSIDE_RECT));
+  h.setZones([WHOLE_FRAME]);
+  h.dispatch(human("Stop", OUTSIDE_RECT));
+
+  assert.deepEqual(
+    walkInLines(h.debug),
+    [],
+    `the same box cannot both fail and pass: ${JSON.stringify(h.debug)}`,
+  );
+  assert.deepEqual(
+    h.calls.map((c) => ({ method: c.method, active: c.active })),
+    [{ method: "report", active: false }],
+    "still observation only",
+  );
+});
+
+test("dispatchEvent: deleting every zone between Start and Stop says nothing about the suppression", () => {
+  // The no-zones-drawn case specifically: a walk-in line here would be emitted
+  // with an empty zone list, which is exactly what must stay silent.
+  const h = harness([DRIVEWAY]);
+
+  h.dispatch(human("Start", OUTSIDE_RECT));
+  h.setZones([]);
+  h.dispatch(human("Stop", OUTSIDE_RECT));
+
+  assert.deepEqual(
+    walkInLines(h.debug),
+    [],
+    `no zones drawn means nothing to say: ${JSON.stringify(h.debug)}`,
   );
 });

@@ -105,6 +105,8 @@ SmartMotionHuman entered the zones during the event — no alert was sent (see #
 
 The second is the limitation above, caught in the act. If you see it often, the boxes tell you where — and enlarging the zone to cover the first-detection position usually fixes it.
 
+Editing your zones ends any of these that are still pending. A suppression recorded against the old zones cannot be judged against the new ones, so the object that was in flight when you saved goes unreported rather than being described using two different zone lists.
+
 The `box` is the detection's position as `[x, y, width, height]`, in fractions of the frame from the top-left corner. It tells you whether the zone or the camera's own coordinates are the surprise — a value of `1.00` on an edge means the object was clipped at the edge of frame.
 
 If a camera reports detections without coordinates, you will see this once per event type:
