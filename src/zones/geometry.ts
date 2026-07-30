@@ -11,8 +11,16 @@ export type Vec2 = [number, number];
  * Tolerance for the on-boundary test. These coordinates arrive from division
  * (0-8191 and 0-100 both normalize into 0-1), so exact equality is too brittle
  * to decide whether a point sits on an edge.
+ *
+ * Sized against what it has to absorb, which is double rounding: reconstructing
+ * a point on a face by arithmetic misses it by an ulp or two, around 1e-16 near
+ * 1. 1e-12 swallows that four orders of magnitude over while staying far below
+ * any penetration the inputs can express — zone points land on k/100 and box
+ * coordinates on k/8191, so a box that genuinely crosses an edge crosses it by
+ * at least ~6e-9. The margin must sit between those two numbers; the middle of
+ * that range is the safe place to be, not the top of it.
  */
-const BOUNDARY_EPSILON = 1e-9;
+const BOUNDARY_EPSILON = 1e-12;
 
 /**
  * Standard ray-casting test: count how many polygon edges a ray cast in the
@@ -170,6 +178,53 @@ function pointOnPolygonBoundary(point: Vec2, polygon: Vec2[]): boolean {
   return false;
 }
 
+/**
+ * True if the segment ab lies wholly inside the closed polygon.
+ *
+ * Splits ab at every parameter where a polygon edge's infinite line meets it,
+ * then tests one witness point inside each surviving piece. No piece straddles
+ * the outline, so a single point decides the whole piece, and the split points
+ * themselves need no test: they are limits of enclosed points, and a closed
+ * region contains its own limit points.
+ *
+ * Only edges' lines are considered, not their spans. Splitting more finely than
+ * the outline strictly requires is harmless — an extra split cannot change any
+ * witness's answer — and it avoids a second floating-point range test.
+ */
+function segmentInsidePolygon(a: Vec2, b: Vec2, polygon: Vec2[]): boolean {
+  const enclosed = (p: Vec2): boolean =>
+    pointInPolygon(p, polygon) || pointOnPolygonBoundary(p, polygon);
+  if (!enclosed(a) || !enclosed(b)) return false;
+
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  // A point, not a segment: its own position is the whole answer.
+  if (dx === 0 && dy === 0) return true;
+
+  const splits = [0, 1];
+  for (let i = 0; i < polygon.length; i++) {
+    const p = polygon[i];
+    const q = polygon[(i + 1) % polygon.length];
+    const ex = q[0] - p[0];
+    const ey = q[1] - p[1];
+    const denom = dx * ey - dy * ex;
+    // Parallel edges contribute no split. One collinear with ab can still cover
+    // part of it, but the edges meeting it at its ends cannot also be parallel —
+    // they touch ab's line at a shared vertex — so they supply that split.
+    if (denom === 0) continue;
+    const t = ((p[0] - a[0]) * ey - (p[1] - a[1]) * ex) / denom;
+    if (t > 0 && t < 1) splits.push(t);
+  }
+  splits.sort((m, n) => m - n);
+
+  for (let i = 1; i < splits.length; i++) {
+    const mid = (splits[i - 1] + splits[i]) / 2;
+    if (mid <= splits[i - 1] || mid >= splits[i]) continue;
+    if (!enclosed([a[0] + dx * mid, a[1] + dy * mid])) return false;
+  }
+  return true;
+}
+
 /** Sign of the cross product — which side of ab the point c falls on. */
 function orientation(a: Vec2, b: Vec2, c: Vec2): number {
   const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
@@ -246,14 +301,37 @@ function centre(box: BoundingBox): Vec2 {
  *    lies wholly inside or wholly outside and a single point settles which.
  *    The centre is that point.
  *
- * The corner check stays as a fast rejection, and it is what decides a box with
- * no area, whose empty interior makes (1) vacuous and (2) a bare point test.
+ * The corner check is a fast rejection only; (1) and (2) do not need it.
+ *
+ * A box with no area is decided separately, because that argument does not reach
+ * it: an empty interior makes (1) vacuous, and corners plus centre is not enough
+ * on its own — a zero-height box spanning an off-centre notch has both its
+ * corners in the arms and its centre in one of them, while the span between them
+ * crosses the notch. Such a box is a segment, so it is tested as one.
  */
 export function boxInsidePolygon(box: BoundingBox, polygon: Vec2[]): boolean {
   if (polygon.length < 3) return false;
 
   const enclosed = (p: Vec2): boolean =>
     pointInPolygon(p, polygon) || pointOnPolygonBoundary(p, polygon);
+
+  // Too thin for the interior test below to resolve, so decide it from the
+  // outline instead: a box lies inside a simple polygon exactly when all four of
+  // its edges do, since an outside point in its interior would need a path out to
+  // infinity, and that path has to cross an edge somewhere outside the polygon.
+  // Collapsed to a segment or a point, the four edges repeat or vanish, which is
+  // the right answer for a zero-area box.
+  const { minX, minY, maxX, maxY } = extents(box);
+  if (
+    maxX - minX <= 2 * BOUNDARY_EPSILON ||
+    maxY - minY <= 2 * BOUNDARY_EPSILON
+  ) {
+    const ring = corners(box);
+    return ring.every((c, i) =>
+      segmentInsidePolygon(c, ring[(i + 1) % ring.length], polygon),
+    );
+  }
+
   if (!corners(box).every(enclosed)) return false;
 
   for (let i = 0; i < polygon.length; i++) {

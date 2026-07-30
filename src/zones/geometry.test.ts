@@ -228,12 +228,135 @@ test("boxInsidePolygon: a frame-clipped box spanning a notch that opens on the f
 });
 
 test("boxInsidePolygon: a box touching a zone wall from outside is still contained by the arm it sits in", () => {
-  // Guards the floating-point half of the same bug. Reconstructing a clipped
-  // point by arithmetic (0.7 + -0.6) yields 0.09999999999999998 rather than 0.1,
-  // so an exact strict-interior test wrongly reads the notch wall as passing
-  // through this box and reports the arm's own occupant as escaping.
+  // The notch's vertical wall lies exactly along this box's right edge. Touching
+  // is not entering, so the arm's own occupant is contained.
   assert.equal(
     boxInsidePolygon({ x: 0, y: 0.4, width: 0.2, height: 0.48 }, U_SHAPE),
     true,
+  );
+});
+
+test("boxInsidePolygon: a wall that stops exactly on the box's edge has not entered it", () => {
+  // Pins BOUNDARY_EPSILON. The notch's horizontal wall runs from (0.7, 0.7) to
+  // (0.1, 0.7) and dies on this box's right face at x = 0.1, inside the box's y
+  // span — so the clip keeps a single point and the interior test has to judge
+  // it. Reconstructing that point by arithmetic gives 0.7 + -0.6 =
+  // 0.09999999999999998, which is 2.8e-17 short of the face it belongs on. Without
+  // the epsilon that reads as interior, and the arm's own occupant is reported
+  // as escaping the zone. Delete BOUNDARY_EPSILON and this assertion flips.
+  const U_LOW_NOTCH: Vec2[] = [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0.7, 1],
+    [0.7, 0.7],
+    [0.1, 0.7],
+    [0.1, 1],
+    [0, 1],
+  ];
+  assert.equal(
+    boxInsidePolygon({ x: 0, y: 0.5, width: 0.1, height: 0.3 }, U_LOW_NOTCH),
+    true,
+  );
+});
+
+test("boxInsidePolygon: spanning an off-centre notch is not containment", () => {
+  // Both the corner check and the centre witness are satisfied here: all four
+  // corners sit in the polygon and the notch is far enough off centre that the
+  // box's midpoint lands in the right-hand arm. Only walking the polygon's edges
+  // against the box interior finds the notch this box straddles.
+  const OFF_CENTRE_NOTCH: Vec2[] = [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0.4, 1],
+    [0.4, 0.3],
+    [0.2, 0.3],
+    [0.2, 1],
+    [0, 1],
+  ];
+  assert.equal(
+    boxInsidePolygon(
+      { x: 0.1, y: 0.5, width: 0.8, height: 0.2 },
+      OFF_CENTRE_NOTCH,
+    ),
+    false,
+  );
+});
+
+test("boxInsidePolygon: a box wedged exactly inside the notch is not contained", () => {
+  // Fills U_SHAPE's notch precisely: flush against both walls and the notch's
+  // ceiling, and running off the bottom of frame. Every corner sits on the
+  // polygon's outline and no edge passes through the interior, so nothing but a
+  // point test can tell that this box lies in the hole rather than the zone.
+  assert.equal(
+    boxInsidePolygon({ x: 0.2, y: 0.3, width: 0.6, height: 0.7 }, U_SHAPE),
+    false,
+  );
+});
+
+test("boxInsidePolygon: a zero-height box spanning an off-centre notch is not contained", () => {
+  // A Rect with x1 === x2 or y1 === y2 normalizes to a box with no area, and a
+  // mixed payload — one real detection plus one collapsed one — sends it straight
+  // into the zone test. Corners plus centre cannot decide it: both ends sit in
+  // the arms and the midpoint sits in the wide one, while the span between them
+  // crosses the notch. It has to be tested as the segment it is.
+  const OFF_CENTRE_NOTCH: Vec2[] = [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0.25, 1],
+    [0.25, 0.25],
+    [0.08, 0.25],
+    [0.08, 1],
+    [0, 1],
+  ];
+  assert.equal(
+    boxInsidePolygon({ x: 0, y: 0.5, width: 1, height: 0 }, OFF_CENTRE_NOTCH),
+    false,
+  );
+});
+
+test("boxInsidePolygon: a zero-area box inside the zone is still contained", () => {
+  // The flip side: collapsing an axis must not make everything escape. A
+  // zero-height box in the U's bottom band, a zero-width one in its left arm, and
+  // a single point in the middle of a square are all inside.
+  assert.equal(
+    boxInsidePolygon({ x: 0.4, y: 0.15, width: 0.2, height: 0 }, U_SHAPE),
+    true,
+    "zero height",
+  );
+  assert.equal(
+    boxInsidePolygon({ x: 0.1, y: 0.4, width: 0, height: 0.5 }, U_SHAPE),
+    true,
+    "zero width",
+  );
+  assert.equal(
+    boxInsidePolygon({ x: 0.5, y: 0.5, width: 0, height: 0 }, SQUARE),
+    true,
+    "single point",
+  );
+});
+
+test("boxInsidePolygon: a zero-area box on the frame edge is inside a full-frame zone", () => {
+  // The frame-edge case again, collapsed: a detection clipped to the bottom of
+  // frame with y1 === y2 is a segment lying exactly along the zone's outline, and
+  // a privacy mask drawn to the edge of the picture has to hide it.
+  assert.equal(
+    boxInsidePolygon({ x: 0.3, y: 1, width: 0.4, height: 0 }, FULL_FRAME),
+    true,
+  );
+});
+
+test("boxInsidePolygon: a zero-area box outside the zone is not contained", () => {
+  assert.equal(
+    boxInsidePolygon({ x: 0.4, y: 0.6, width: 0.2, height: 0 }, U_SHAPE),
+    false,
+    "segment across the notch",
+  );
+  assert.equal(
+    boxInsidePolygon({ x: 0.9, y: 0.9, width: 0, height: 0 }, SQUARE),
+    false,
+    "point outside",
   );
 });
