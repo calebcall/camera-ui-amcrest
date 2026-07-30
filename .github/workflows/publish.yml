@@ -7,7 +7,7 @@ name: publish
 # Auth: npm Trusted Publishing (OIDC) — no NPM_TOKEN is stored anywhere, so
 # there is nothing to rotate. This requires, ONE TIME (see PUBLISHING.md):
 #   - `permissions: id-token: write` (below),
-#   - npm >= 11.5.1 (upgraded below; Node 22 ships npm 10.x),
+#   - npm >= 11.5.1 (upgraded below; kept as a floor guard, not a version bet),
 #   - a Trusted Publisher configured on npmjs.com for the package, pointing at
 #     this repo + this workflow file. This is a TypeScript plugin (no
 #     per-platform binaries), so only the single package
@@ -36,10 +36,11 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted publishing (OIDC) requires npm >= 11.5.1; Node 22 bundles npm 10.x.
+      # Trusted publishing (OIDC) requires npm >= 11.5.1. Node 24 already ships 11.x,
+      # so this is a floor guard rather than a fix for a known-old npm.
       - name: Upgrade npm
         run: npm install -g npm@latest
 

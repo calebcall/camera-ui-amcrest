@@ -49,8 +49,11 @@ manual run builds and stops before `npm publish`. Uncheck it to publish
 
 ## Notes
 
-- The workflow upgrades npm to the latest before publishing — Trusted Publishing
-  needs npm ≥ 11.5.1, and the Node 22 runner ships npm 10.x.
+- The workflow runs on Node 24, which the plugin requires: `@seydx/rtsp` ships
+  explicit-resource-management syntax (`for await (using x of y)`) that Node 22
+  cannot parse, so the plugin fails to load there. `engines.node` says `>=24.0.0`.
+- The workflow upgrades npm before publishing — Trusted Publishing needs
+  npm ≥ 11.5.1. Node 24 already ships 11.x, so this is a floor guard.
 - `npm run bundle` runs format/lint/test before building; a failure there blocks
   the publish (intended quality gate).
 - Local/manual publishing still works via `npm run publish:latest` with an npm

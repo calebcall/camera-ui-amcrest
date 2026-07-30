@@ -2,6 +2,8 @@
 
 ## 1.4.0
 
+**Node 24 or newer is now required** (`engines.node` was previously `>=22.0.0`). This corrects a declaration that was already wrong rather than imposing something new: `@seydx/rtsp`, which the plugin imports for RTSP relay and talkback, ships explicit-resource-management syntax (`for await (using x of y)`) that Node 22 cannot parse. On Node 22 the plugin has therefore failed to load at all since 1.3.0 — the requirement was real, only undeclared. Anyone on Node 22 now gets a clear engine error at install instead of an unexplained crash.
+
 Detection zones drawn in camera.ui now apply to this plugin's object events. Previously they had no effect, which looked like a bug but was structural: camera.ui zone-filters detections inside its frame pipeline, and this plugin reports events straight from the camera, bypassing that pipeline entirely.
 
 - Objects: zones are read from the camera's own configuration and applied before a detection reaches the sensor. Full camera.ui semantics — `include`/`exclude`, `intersect`/`contain`, per-zone label filters and privacy masks. Nothing is written to the camera; zones are applied on the server side, so no device configuration is touched.
