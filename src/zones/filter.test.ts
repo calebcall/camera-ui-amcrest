@@ -443,6 +443,55 @@ test("decideObjectEvent: a real box alongside a degenerate one is still filtered
   );
 });
 
+// A mask with a narrow off-centre slot cut out of it, in 0-100 percentages.
+const NOTCHED_MASK_POINTS: DetectionZone["points"] = [
+  [0, 0],
+  [100, 0],
+  [100, 100],
+  [25, 100],
+  [25, 25],
+  [8, 25],
+  [8, 100],
+  [0, 100],
+];
+
+test("keepDetection: a zero-area box crossing a mask's slot is not inside the mask", () => {
+  // The mixed-payload path: `decideObjectEvent` only fails open when *no*
+  // detection has coordinates, so one collapsed Rect next to a real one reaches
+  // the mask test on its own. This box spans the mask's slot, which is not
+  // masked ground, so the mask must not claim it.
+  const zones = compileZones([
+    zone({
+      name: "Mask",
+      isPrivacyMask: true,
+      points: NOTCHED_MASK_POINTS,
+    }),
+  ]);
+  assert.equal(
+    keepDetection({ x: 0, y: 0.5, width: 1, height: 0 }, "person", zones).keep,
+    true,
+  );
+});
+
+test("keepDetection: a zero-area box wholly inside a mask is still masked", () => {
+  // The other half of the same behaviour: collapsing an axis must not become a
+  // way to walk through a privacy mask.
+  const zones = compileZones([
+    zone({
+      name: "Mask",
+      isPrivacyMask: true,
+      points: NOTCHED_MASK_POINTS,
+    }),
+  ]);
+  const verdict = keepDetection(
+    { x: 0.4, y: 0.5, width: 0.3, height: 0 },
+    "person",
+    zones,
+  );
+  assert.equal(verdict.keep, false);
+  assert.match(verdict.reason ?? "", /inside privacy mask 'Mask'/);
+});
+
 test("decideObjectEvent: reports only the detections that survive", () => {
   const zones = compileZones([zone({ name: "Driveway" })]);
   const decision = decideObjectEvent(
