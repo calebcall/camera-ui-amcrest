@@ -25,12 +25,12 @@ NVR-attached channels are not supported in this release — see [Known limitatio
 
 If a device isn't discovered automatically, add it manually with:
 
-| Field | Description |
-| --- | --- |
-| IP Address | The camera/doorbell's IP address, e.g. `192.168.1.50`. |
-| Username | Account username (see the admin-credential note below for doorbells). |
-| Password | Account password. |
-| Channel | Camera channel (defaults to `1`; only relevant for multi-channel devices). |
+| Field      | Description                                                                |
+| ---------- | -------------------------------------------------------------------------- |
+| IP Address | The camera/doorbell's IP address, e.g. `192.168.1.50`.                     |
+| Username   | Account username (see the admin-credential note below for doorbells).      |
+| Password   | Account password.                                                          |
+| Channel    | Camera channel (defaults to `1`; only relevant for multi-channel devices). |
 
 ### Discovery
 
@@ -41,6 +41,63 @@ The plugin listens for Dahua DHIP discovery responses on the local network (UDP 
 For Amcrest doorbells, the plugin requires the device's local **admin** account credential — the same `admin` username and password used to configure the doorbell directly (e.g. via its web UI or `Amcrest Smart Home` cloud app's device settings).
 
 This is **not** the same as your `Amcrest Smart Home` cloud account login. The cloud account uses an email address and is only used to manage the device from the mobile app; it cannot be used to authenticate directly against the device's CGI API. If you don't remember the `admin` password, it's the one you set the first time you configured the doorbell (before adding it to the cloud app).
+
+## Detection zones
+
+Zones drawn in camera.ui are applied to this plugin's events by the plugin itself. Draw them as normal — there is nothing to enable, and no zone settings on the plugin's own page.
+
+Because detection happens on the camera rather than on frames decoded by camera.ui, zones can only be applied to events that tell us _where_ something happened:
+
+| Event                                         | Carries coordinates | Zones apply |
+| --------------------------------------------- | ------------------- | ----------- |
+| `SmartMotionHuman` / `SmartMotionVehicle`     | yes                 | yes         |
+| `CrossLineDetection` / `CrossRegionDetection` | yes                 | yes         |
+| `FaceDetection`                               | usually             | yes         |
+| `VideoMotion` (plain motion)                  | no                  | **no**      |
+
+Plain motion carries no coordinates at all, so it is always reported in full. If plain motion is your main source of noise, turn it off on the camera and rely on the smart events instead.
+
+Object types are filtered by the same mechanism: a zone's **labels** decide which detections it applies to. There is no separate "never alert me about vehicles" setting — express it as a zone. To ignore vehicles everywhere, draw an `exclude` zone covering the frame with its labels set to `vehicle`.
+
+### Choosing intersect or contain
+
+|               | `include`                                   | `exclude`                          |
+| ------------- | ------------------------------------------- | ---------------------------------- |
+| **intersect** | alert if the object touches the zone at all | drop if it touches the zone at all |
+| **contain**   | alert only if the object is wholly inside   | drop only if it is wholly inside   |
+
+**Recommended: `intersect` for include zones, `contain` for exclude zones.**
+
+`contain` combined with `include` is the strict pairing, and it misfires in two common ways:
+
+- Someone entering from the edge of frame is only partly inside the zone at first, so they do not alert until they are wholly within it.
+- Someone close to the camera has a large bounding box. If your zone is a modest patch of driveway, that box may never fit wholly inside it, so they never alert even while standing in the middle of the zone.
+
+`contain` with `exclude` is the safe pairing — "ignore things wholly inside the neighbour's garden", where someone straddling the boundary still alerts.
+
+### Known limitation
+
+Filtering uses the position reported when the camera first detects the object. If someone is first picked up outside your zone and then walks into it, and your camera does not re-report that object as it moves, no alert is produced. Prefer `intersect` include zones drawn a little larger than the area you care about.
+
+### Checking what is being filtered
+
+Enable debug logging in camera.ui and look for:
+
+```
+SmartMotionHuman suppressed by detection zones: box [0.85,0.85,0.06,0.06] outside include zone(s) 'Driveway'
+SmartMotionVehicle partially filtered by detection zones: box [0.12,0.61,0.30,0.24] inside exclude zone 'Street'
+Detection zones updated: 2 zone(s)
+```
+
+The `box` is the detection's position as `[x, y, width, height]`, in fractions of the frame from the top-left corner. It tells you whether the zone or the camera's own coordinates are the surprise — a value of `1.00` on an edge means the object was clipped at the edge of frame.
+
+If a camera reports detections without coordinates, you will see this once per event type:
+
+```
+SmartMotionHuman (person) carried no coordinates, so detection zones cannot be applied to it — it is reported unfiltered. Further occurrences are not logged.
+```
+
+That is expected on some firmware. Those events are always reported rather than dropped, so a terse camera never costs you a real detection. Note that this line is only logged when you have zones drawn — with no zones there is nothing for the missing coordinates to cost you, so it is not worth saying.
 
 ## Troubleshooting events
 
@@ -80,3 +137,4 @@ The following are deferred to a future release:
 - **ONVIF-backchannel talkback fallback** — devices that only support two-way audio via an ONVIF backchannel (rather than the native Amcrest/Dahua audio path) are not yet supported.
 - **Dahua-doorbell G.711A talkback** — implemented per the documented codec path but not yet verified against real Dahua-branded doorbell hardware.
 - **Discovery byte format** — the Dahua UDP discovery probe/response parsing is based on the documented protocol and has not yet been validated against a real device capture; manual add remains the reliable fallback if discovery doesn't find your device.
+- **Camera-side zone configuration** — zones are applied by the plugin, not written to the camera. The device's own recording and alert rules still use whatever regions are configured on it.
