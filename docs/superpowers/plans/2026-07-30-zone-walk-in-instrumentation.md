@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - **No behaviour change.** Every sensor call this plan produces must be identical to 1.4.0's. Only log output differs. If you find yourself changing what `report()` or `pulse()` receives, stop and report it.
-- **`decideObjectEvent` is not modified.** It carries the latch guarantee, it is pure and stateless, and it cannot know a prior `Start` was suppressed.
+- **`decideObjectEvent`'s logic is not modified.** It carries the latch guarantee, it is pure and stateless, and it cannot know a prior `Start` was suppressed. Exactly one edit to it is authorised anywhere in this plan — Task 1 step 6, substituting `hasUsableCoordinates(detections)` for the identical `detections.some(hasCoordinates)` so the rule has one expression rather than two. Any other change to that function is out of scope; stop and report it.
 - **The deactivation path still always reports.** New logic there only reads and logs. A filtered `Stop` would latch the object sensor active indefinitely.
 - Relative imports MUST end in `.js` (NodeNext resolution).
 - Type-only imports MUST use `import type` — `@typescript-eslint/consistent-type-imports` is `error`.
