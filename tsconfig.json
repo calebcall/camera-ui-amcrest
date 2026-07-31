@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "outDir": "./dist",
+    "rootDir": "./src",
     "target": "ES2022",
     "moduleResolution": "NodeNext",
     "module": "NodeNext",
@@ -17,7 +18,11 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "verbatimModuleSyntax": true,
-    "noImplicitAny": true
+    "noImplicitAny": true,
+    // TypeScript 6 no longer pulls in every @types/* package automatically,
+    // so the ambient Node globals (Buffer, NodeJS.*, node: builtins) have to
+    // be requested by name.
+    "types": ["node"]
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]

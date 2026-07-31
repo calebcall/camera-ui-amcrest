@@ -1,13 +1,13 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
 
 import {
   boxInsidePolygon,
   boxIntersectsPolygon,
   pointInPolygon,
-} from "./geometry.js";
+} from './geometry.js';
 
-import type { Vec2 } from "./geometry.js";
+import type { Vec2 } from './geometry.js';
 
 const SQUARE: Vec2[] = [
   [0.2, 0.2],
@@ -34,17 +34,17 @@ const U_SHAPE: Vec2[] = [
   [0, 1],
 ];
 
-test("pointInPolygon: convex interior and exterior", () => {
+test('pointInPolygon: convex interior and exterior', () => {
   assert.equal(pointInPolygon([0.5, 0.5], SQUARE), true);
   assert.equal(pointInPolygon([0.9, 0.5], SQUARE), false);
   assert.equal(pointInPolygon([0.5, 0.1], SQUARE), false);
 });
 
-test("pointInPolygon: concave shapes exclude the notch", () => {
-  assert.equal(pointInPolygon([0.5, 0.15], U_SHAPE), true, "bottom band");
-  assert.equal(pointInPolygon([0.1, 0.6], U_SHAPE), true, "left arm");
-  assert.equal(pointInPolygon([0.9, 0.6], U_SHAPE), true, "right arm");
-  assert.equal(pointInPolygon([0.5, 0.6], U_SHAPE), false, "notch is outside");
+test('pointInPolygon: concave shapes exclude the notch', () => {
+  assert.equal(pointInPolygon([0.5, 0.15], U_SHAPE), true, 'bottom band');
+  assert.equal(pointInPolygon([0.1, 0.6], U_SHAPE), true, 'left arm');
+  assert.equal(pointInPolygon([0.9, 0.6], U_SHAPE), true, 'right arm');
+  assert.equal(pointInPolygon([0.5, 0.6], U_SHAPE), false, 'notch is outside');
 });
 
 // Boundary points are resolved by a half-open convention: the left and top
@@ -52,25 +52,25 @@ test("pointInPolygon: concave shapes exclude the notch", () => {
 // downward in image space, so the smaller y is the top). It only gives a bare
 // point a deterministic answer — boxInsidePolygon deliberately overrides it,
 // because a box flush against a zone edge is inside that zone.
-test("pointInPolygon: boundary points use a consistent half-open rule", () => {
-  assert.equal(pointInPolygon([0.2, 0.5], SQUARE), true, "left edge");
-  assert.equal(pointInPolygon([0.8, 0.5], SQUARE), false, "right edge");
-  assert.equal(pointInPolygon([0.2, 0.2], SQUARE), true, "top-left vertex");
+test('pointInPolygon: boundary points use a consistent half-open rule', () => {
+  assert.equal(pointInPolygon([0.2, 0.5], SQUARE), true, 'left edge');
+  assert.equal(pointInPolygon([0.8, 0.5], SQUARE), false, 'right edge');
+  assert.equal(pointInPolygon([0.2, 0.2], SQUARE), true, 'top-left vertex');
   assert.equal(
     pointInPolygon([0.8, 0.8], SQUARE),
     false,
-    "bottom-right vertex",
+    'bottom-right vertex',
   );
 });
 
-test("boxIntersectsPolygon: box corner inside the polygon", () => {
+test('boxIntersectsPolygon: box corner inside the polygon', () => {
   assert.equal(
     boxIntersectsPolygon({ x: 0.7, y: 0.7, width: 0.2, height: 0.2 }, SQUARE),
     true,
   );
 });
 
-test("boxIntersectsPolygon: box entirely containing the polygon", () => {
+test('boxIntersectsPolygon: box entirely containing the polygon', () => {
   // No box corner is inside the polygon and no box edge crosses it; this can
   // only be caught by testing whether a polygon vertex falls inside the box.
   assert.equal(
@@ -96,14 +96,14 @@ test("boxIntersectsPolygon: crossing with neither shape containing the other's v
   );
 });
 
-test("boxIntersectsPolygon: disjoint", () => {
+test('boxIntersectsPolygon: disjoint', () => {
   assert.equal(
     boxIntersectsPolygon({ x: 0.85, y: 0.85, width: 0.1, height: 0.1 }, SQUARE),
     false,
   );
 });
 
-test("boxIntersectsPolygon: degenerate polygon never matches", () => {
+test('boxIntersectsPolygon: degenerate polygon never matches', () => {
   assert.equal(
     boxIntersectsPolygon({ x: 0, y: 0, width: 1, height: 1 }, [
       [0, 0],
@@ -113,7 +113,7 @@ test("boxIntersectsPolygon: degenerate polygon never matches", () => {
   );
 });
 
-test("boxIntersectsPolygon: a reversed box still swallows the polygon", () => {
+test('boxIntersectsPolygon: a reversed box still swallows the polygon', () => {
   // Firmware is not obliged to send Rect the right way round. Expressed with
   // negative extents, this is the same 0-1 box as the test above, and the only
   // branch that can find the overlap is "polygon vertex inside the box" — which
@@ -124,35 +124,35 @@ test("boxIntersectsPolygon: a reversed box still swallows the polygon", () => {
   );
 });
 
-test("boxInsidePolygon: a reversed box is still contained", () => {
+test('boxInsidePolygon: a reversed box is still contained', () => {
   assert.equal(
     boxInsidePolygon({ x: 0.5, y: 0.5, width: -0.2, height: -0.2 }, SQUARE),
     true,
   );
 });
 
-test("boxInsidePolygon: wholly inside a convex polygon", () => {
+test('boxInsidePolygon: wholly inside a convex polygon', () => {
   assert.equal(
     boxInsidePolygon({ x: 0.3, y: 0.3, width: 0.2, height: 0.2 }, SQUARE),
     true,
   );
 });
 
-test("boxInsidePolygon: partial overlap is not containment", () => {
+test('boxInsidePolygon: partial overlap is not containment', () => {
   assert.equal(
     boxInsidePolygon({ x: 0.7, y: 0.7, width: 0.2, height: 0.2 }, SQUARE),
     false,
   );
 });
 
-test("boxInsidePolygon: disjoint", () => {
+test('boxInsidePolygon: disjoint', () => {
   assert.equal(
     boxInsidePolygon({ x: 0.85, y: 0.85, width: 0.1, height: 0.1 }, SQUARE),
     false,
   );
 });
 
-test("boxInsidePolygon: wholly inside a concave polygon", () => {
+test('boxInsidePolygon: wholly inside a concave polygon', () => {
   // Sits in the U's bottom band, clear of the notch.
   assert.equal(
     boxInsidePolygon({ x: 0.4, y: 0.05, width: 0.2, height: 0.15 }, U_SHAPE),
@@ -160,7 +160,7 @@ test("boxInsidePolygon: wholly inside a concave polygon", () => {
   );
 });
 
-test("boxInsidePolygon: all corners inside but bulging through a concave notch", () => {
+test('boxInsidePolygon: all corners inside but bulging through a concave notch', () => {
   // Spans the U's two arms at y 0.5-0.6. All four corners land inside an arm,
   // but the middle of the box crosses the notch, which is outside the polygon.
   // A corners-only implementation returns true here — it must be false.
@@ -174,28 +174,28 @@ test("boxInsidePolygon: all corners inside but bulging through a concave notch",
 // zone drawn to the edge of the picture compiles to exactly 1.0 too. If
 // containment were half-open on those sides, a full-frame zone would fail to
 // contain the object standing at the edge of it.
-test("boxInsidePolygon: a box flush against the bottom of frame is inside a full-frame zone", () => {
+test('boxInsidePolygon: a box flush against the bottom of frame is inside a full-frame zone', () => {
   assert.equal(
     boxInsidePolygon({ x: 0.3, y: 0.55, width: 0.4, height: 0.45 }, FULL_FRAME),
     true,
   );
 });
 
-test("boxInsidePolygon: a box flush against the right of frame is inside a full-frame zone", () => {
+test('boxInsidePolygon: a box flush against the right of frame is inside a full-frame zone', () => {
   assert.equal(
     boxInsidePolygon({ x: 0.6, y: 0.2, width: 0.4, height: 0.3 }, FULL_FRAME),
     true,
   );
 });
 
-test("boxInsidePolygon: a box filling the frame exactly is inside a full-frame zone", () => {
+test('boxInsidePolygon: a box filling the frame exactly is inside a full-frame zone', () => {
   assert.equal(
     boxInsidePolygon({ x: 0, y: 0, width: 1, height: 1 }, FULL_FRAME),
     true,
   );
 });
 
-test("boxInsidePolygon: sharing an edge is not enough when the box lies outside it", () => {
+test('boxInsidePolygon: sharing an edge is not enough when the box lies outside it', () => {
   // Sits directly below the frame, touching only along y = 1.
   assert.equal(
     boxInsidePolygon({ x: 0.3, y: 1, width: 0.4, height: 0.2 }, FULL_FRAME),
@@ -203,7 +203,7 @@ test("boxInsidePolygon: sharing an edge is not enough when the box lies outside 
   );
 });
 
-test("boxInsidePolygon: degenerate polygon never contains", () => {
+test('boxInsidePolygon: degenerate polygon never contains', () => {
   assert.equal(
     boxInsidePolygon({ x: 0.4, y: 0.4, width: 0.1, height: 0.1 }, [
       [0, 0],
@@ -213,7 +213,7 @@ test("boxInsidePolygon: degenerate polygon never contains", () => {
   );
 });
 
-test("boxInsidePolygon: a frame-clipped box spanning a notch that opens on the frame edge is not contained", () => {
+test('boxInsidePolygon: a frame-clipped box spanning a notch that opens on the frame edge is not contained', () => {
   // The regression the boundary-inclusive fix originally introduced. U_SHAPE's
   // notch reaches y = 1, and this box's bottom edge lands on exactly 1.0 the way
   // a clipped detection does. Both notch walls therefore meet the box edge as
@@ -227,7 +227,7 @@ test("boxInsidePolygon: a frame-clipped box spanning a notch that opens on the f
   );
 });
 
-test("boxInsidePolygon: a box touching a zone wall from outside is still contained by the arm it sits in", () => {
+test('boxInsidePolygon: a box touching a zone wall from outside is still contained by the arm it sits in', () => {
   // The notch's vertical wall lies exactly along this box's right edge. Touching
   // is not entering, so the arm's own occupant is contained.
   assert.equal(
@@ -260,7 +260,7 @@ test("boxInsidePolygon: a wall that stops exactly on the box's edge has not ente
   );
 });
 
-test("boxInsidePolygon: spanning an off-centre notch is not containment", () => {
+test('boxInsidePolygon: spanning an off-centre notch is not containment', () => {
   // Both the corner check and the centre witness are satisfied here: all four
   // corners sit in the polygon and the notch is far enough off centre that the
   // box's midpoint lands in the right-hand arm. Only walking the polygon's edges
@@ -284,7 +284,7 @@ test("boxInsidePolygon: spanning an off-centre notch is not containment", () => 
   );
 });
 
-test("boxInsidePolygon: a box wedged exactly inside the notch is not contained", () => {
+test('boxInsidePolygon: a box wedged exactly inside the notch is not contained', () => {
   // Fills U_SHAPE's notch precisely: flush against both walls and the notch's
   // ceiling, and running off the bottom of frame. Every corner sits on the
   // polygon's outline and no edge passes through the interior, so nothing but a
@@ -295,7 +295,7 @@ test("boxInsidePolygon: a box wedged exactly inside the notch is not contained",
   );
 });
 
-test("boxInsidePolygon: a zero-height box spanning an off-centre notch is not contained", () => {
+test('boxInsidePolygon: a zero-height box spanning an off-centre notch is not contained', () => {
   // A Rect with x1 === x2 or y1 === y2 normalizes to a box with no area, and a
   // mixed payload — one real detection plus one collapsed one — sends it straight
   // into the zone test. Corners plus centre cannot decide it: both ends sit in
@@ -317,28 +317,28 @@ test("boxInsidePolygon: a zero-height box spanning an off-centre notch is not co
   );
 });
 
-test("boxInsidePolygon: a zero-area box inside the zone is still contained", () => {
+test('boxInsidePolygon: a zero-area box inside the zone is still contained', () => {
   // The flip side: collapsing an axis must not make everything escape. A
   // zero-height box in the U's bottom band, a zero-width one in its left arm, and
   // a single point in the middle of a square are all inside.
   assert.equal(
     boxInsidePolygon({ x: 0.4, y: 0.15, width: 0.2, height: 0 }, U_SHAPE),
     true,
-    "zero height",
+    'zero height',
   );
   assert.equal(
     boxInsidePolygon({ x: 0.1, y: 0.4, width: 0, height: 0.5 }, U_SHAPE),
     true,
-    "zero width",
+    'zero width',
   );
   assert.equal(
     boxInsidePolygon({ x: 0.5, y: 0.5, width: 0, height: 0 }, SQUARE),
     true,
-    "single point",
+    'single point',
   );
 });
 
-test("boxInsidePolygon: a zero-area box on the frame edge is inside a full-frame zone", () => {
+test('boxInsidePolygon: a zero-area box on the frame edge is inside a full-frame zone', () => {
   // The frame-edge case again, collapsed: a detection clipped to the bottom of
   // frame with y1 === y2 is a segment lying exactly along the zone's outline, and
   // a privacy mask drawn to the edge of the picture has to hide it.
@@ -348,15 +348,15 @@ test("boxInsidePolygon: a zero-area box on the frame edge is inside a full-frame
   );
 });
 
-test("boxInsidePolygon: a zero-area box outside the zone is not contained", () => {
+test('boxInsidePolygon: a zero-area box outside the zone is not contained', () => {
   assert.equal(
     boxInsidePolygon({ x: 0.4, y: 0.6, width: 0.2, height: 0 }, U_SHAPE),
     false,
-    "segment across the notch",
+    'segment across the notch',
   );
   assert.equal(
     boxInsidePolygon({ x: 0.9, y: 0.9, width: 0, height: 0 }, SQUARE),
     false,
-    "point outside",
+    'point outside',
   );
 });
