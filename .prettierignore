@@ -1,3 +1,9 @@
 src/fixtures/
 dist/
 bundle/
+
+# eslint/@stylistic is the formatter of record for source. Prettier is kept off
+# it so the two never format the same file and fight each other; prettier's job
+# is the test files, which eslint.config.js ignores. See #31 and prettier.config.js.
+src/**/*.ts
+!src/**/*.test.ts
