@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.1
+
+A maintenance release. Every dependency was checked against the registry and updated; there is no behaviour change and nothing to do on upgrade. Detection, zones, streaming, PTZ and talkback all work exactly as they did in 1.5.0, and the runtime floor is unchanged at camera.ui >=2.0.15 and Node >=24.
+
+- The plugin bundle now declares which version of the camera.ui plugin API it was built against, as `cameraui.protocolLevel`. Newer camera.ui servers will read that stamp and refuse to start a plugin built against an incompatible API rather than failing in some harder-to-diagnose way later. No server enforces it yet, so this changes nothing today — it means this plugin is already carrying the marker when they do. Comes from `@camera.ui/cli` 0.0.73 and `@camera.ui/sdk` 1.2.3.
+- Resolved a high-severity advisory (GHSA-mh99-v99m-4gvg) in `brace-expansion`, which the plugin picked up indirectly through ESLint. This was build-time only and never reachable from the running plugin, but the dependency tree is now clean.
+- Toolchain moved to TypeScript 6 and ESLint 10. Development-only; it does not affect what is published beyond the two points above. TypeScript is deliberately held at 6.x rather than 7.x — the plugin's type-aware lint rules do not yet support the TypeScript 7 compiler, and the reason is recorded in `updates.config.js` so it does not have to be rediscovered.
+- Fixed a long-standing annoyance where the formatter and the linter disagreed about source style and quietly undid each other's work depending on which ran last. They no longer format the same files.
+
 ## 1.5.0
 
 Makes two detection-zone outcomes visible in the log. No behaviour change: every detection reported to camera.ui is exactly what 1.4.0 reported, and zones continue to filter exactly as before.
