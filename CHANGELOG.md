@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.6.0
+
+**camera.ui 2.0.24 or newer is now required** (previously `>=2.0.15`). Like the Node 24 change in 1.4.0, this corrects a declaration that was already wrong rather than imposing something new.
+
+The plugin does not ship its own copy of the camera.ui SDK — it asks the server for one at runtime. That means the SDK it actually runs against is whichever the server provides, and 2.0.23 changed which that is: servers up to 2.0.22 provide the old SDK, 2.0.23 and later provide the new one built for the rebuilt sensor system. This plugin has been written against the new SDK since 1.5.0, so on a server older than 2.0.23 its sensors were never going to work — the plugin simply never said so. You would have seen motion, object, audio and doorbell sensors quietly fail to appear, with nothing in the log pointing at the cause. Now the mismatch is refused at install time with a clear message.
+
+The floor is 2.0.24 rather than the strict 2.0.23 minimum because 2.0.24 fixes four server-side bugs that hit this plugin directly: per-camera plugin settings being wiped when a plugin is toggled off and on (this is where your detection zones live), camera-bound sensors permanently losing their camera assignment, cleared settings becoming undefined and making motion detectors fail on every frame, and the plugin settings panel sticking on "No configuration available". The two versions were released the same day, so requiring the later one costs nothing.
+
+**If you are on camera.ui 2.0.23 or older**, update the server first; this plugin will not be offered to you until you do, and you will stay on 1.5.1. Nothing else about the plugin changed — no configuration to revisit, no behaviour difference on a server that meets the new floor.
+
+- Bumped `@camera.ui/cli` to 0.0.74 (build tooling only; `@camera.ui/sdk` was already current at 1.2.3).
+- The README now states both the camera.ui and Node requirements up front. The Node 24 requirement was previously only visible in `package.json`.
+
 ## 1.5.1
 
 A maintenance release. Every dependency was checked against the registry and updated; there is no behaviour change and nothing to do on upgrade. Detection, zones, streaming, PTZ and talkback all work exactly as they did in 1.5.0, and the runtime floor is unchanged at camera.ui >=2.0.15 and Node >=24.
