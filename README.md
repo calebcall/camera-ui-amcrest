@@ -2,6 +2,11 @@
 
 Amcrest and Dahua-compatible camera integration for camera.ui. Provides camera discovery, live streaming, two-way audio, PTZ control, and motion, object, audio and doorbell events via the native Amcrest/Dahua CGI API.
 
+## Requirements
+
+- **camera.ui 2.0.24 or newer.** Server 2.0.23 rebuilt the sensor system, and this plugin targets the SDK generation that came with it. On older servers the plugin's sensors would not work — the 2.0.24 floor turns that into a clear message at install time instead of sensors that silently never appear. 2.0.24 also carries the server fixes for per-camera plugin settings and camera-bound sensor assignment, both of which this plugin relies on.
+- **Node 24 or newer.** `@seydx/rtsp`, used for RTSP relay and talkback, ships syntax Node 22 cannot parse.
+
 ## Supported devices
 
 - Standard Amcrest IP cameras (main/sub stream, motion and object detection).

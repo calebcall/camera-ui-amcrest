@@ -26,7 +26,7 @@
     "@seydx/rtsp": "^1.0.5"
   },
   "devDependencies": {
-    "@camera.ui/cli": "^0.0.73",
+    "@camera.ui/cli": "^0.0.74",
     "@camera.ui/sdk": "^1.2.3",
     "@eslint/js": "10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
@@ -43,7 +43,7 @@
     "updates": "^17.20.2"
   },
   "engines": {
-    "camera.ui": ">=2.0.15",
+    "camera.ui": ">=2.0.24",
     "node": ">=24.0.0"
   },
   "os": [],
