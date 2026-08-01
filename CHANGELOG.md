@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.1
+
+A build-tooling release. Nothing about the plugin itself changed — no behaviour difference, no configuration to revisit, and the requirements set in 1.6.0 (camera.ui 2.0.24, Node 24) still stand.
+
+- Updated `@camera.ui/cli` to 0.0.75, which fixes the bundler writing dependency entries into the plugin's own manifest where they did not belong. That bug only affected plugins shipping per-platform compiled binaries, which this one does not, so it was never reachable here — verified rather than assumed. The published plugin is functionally identical to 1.6.0.
+
 ## 1.6.0
 
 **camera.ui 2.0.24 or newer is now required** (previously `>=2.0.15`). Like the Node 24 change in 1.4.0, this corrects a declaration that was already wrong rather than imposing something new.
