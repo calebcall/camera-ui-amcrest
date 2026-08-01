@@ -1,0 +1,23 @@
+// Type-checks the test suite without emitting anything.
+//
+// tsconfig.json excludes **/*.test.ts so the build does not litter dist/ with
+// compiled tests (#41). The tests still need checking though — `npm test` runs
+// them through tsx, which strips types rather than verifying them — so this
+// project picks them back up and `npm run typecheck` runs it as part of
+// `npm run bundle`.
+//
+// The exclude list is reset rather than extended: TypeScript replaces the
+// inherited value instead of merging, but spelling it out avoids implying the
+// tests are added on top of the base project's exclusions.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Meaningless without emit, and `declaration` in particular is an error
+    // when combined with noEmit.
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}
