@@ -25,5 +25,8 @@
     "types": ["node"]
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist"]
+  // Tests are type-checked by tsconfig.test.json, which does not emit. Keeping
+  // them out of this project stops `npm run build` writing a .js/.d.ts/.js.map
+  // triplet per test file into dist/. See #41.
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
