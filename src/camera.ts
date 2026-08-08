@@ -2,6 +2,7 @@ import { PassThrough } from 'node:stream';
 
 import { AvSource, BackchannelTranscoder, Relay } from '@seydx/rtsp';
 
+import { subtypeFromSourceName } from './adopt.js';
 import { AmcrestClient } from './amcrest/api.js';
 import { classifyAmcrestEvent } from './amcrest/classify.js';
 import { classifyDevice } from './amcrest/device.js';
@@ -11,7 +12,10 @@ import {
   extractCompleteEvents,
 } from './amcrest/event-reader.js';
 import { parseAmcrestEvent } from './amcrest/events.js';
-import { selectTalkbackTarget } from './amcrest/talkback.js';
+import {
+  describeTalkbackRejection,
+  selectTalkbackTarget,
+} from './amcrest/talkback.js';
 import { UnhandledCodeTracker } from './amcrest/unhandled-codes.js';
 import {
   AmcrestAudioSensor,
@@ -29,6 +33,7 @@ import {
 } from './zones/filter.js';
 
 import type { AmcrestDetection } from './amcrest/classify.js';
+import type { TalkbackTarget } from './amcrest/talkback.js';
 import type {
   AmcrestCapabilities,
   AmcrestCameraStorage,
@@ -58,11 +63,13 @@ const BACKCHANNEL_ADVERTISE = {
 const ISSUES_URL = 'https://github.com/calebcall/camera-ui-amcrest/issues';
 const EVENT_RECONNECT_BASE_MS = 2000;
 const EVENT_RECONNECT_MAX_MS = 30000;
+/** How long to leave talkback alone after the camera refused a session. */
+const TALKBACK_COOLDOWN_MS = 30000;
 
 class Implementations implements StreamingInterface, SnapshotInterface {
   constructor(private readonly cam: AmcrestCamera) {}
-  async streamUrl(): Promise<string> {
-    return this.cam.getStreamUrl();
+  async streamUrl(sourceId: string): Promise<string> {
+    return this.cam.getStreamUrl(sourceId);
   }
 
   async snapshot(): Promise<ArrayBuffer | undefined> {
@@ -84,6 +91,8 @@ export class AmcrestCamera {
   private transcoder?: BackchannelTranscoder;
   private transcoderStarting?: Promise<void>;
   private talkbackBody?: PassThrough;
+  /** Epoch ms before which no new talkback session is opened; see blockTalkback. */
+  private talkbackBlockedUntil = 0;
 
   private motion?: AmcrestMotionSensor;
   private object?: AmcrestObjectSensor;
@@ -177,16 +186,39 @@ export class AmcrestCamera {
     this.cameraDevice.connect();
   }
 
-  async getStreamUrl(): Promise<string> {
+  async getStreamUrl(sourceId?: string): Promise<string> {
     // Only reachable once implement() has registered Implementations, which happens
     // after this.client is built in initialize() — but guard anyway in case the SDK
     // calls in from an unexpected path.
     if (!this.client) {
       throw new Error('Amcrest camera is not configured');
     }
+    // Every source the plugin registers is a distinct stream on the camera, so a
+    // request for the low-resolution one has to resolve to that stream — the relay
+    // only carries the main one, and answering with it made detectors and playback
+    // decode full-resolution video no matter which source they asked for.
+    const subtype = this.subtypeForSource(sourceId);
+    if (subtype !== undefined && subtype !== 0) {
+      return this.client.rtspUrl(this.channel, subtype);
+    }
+    // The main stream keeps going through the relay: it is the only path that
+    // advertises the RTSP backchannel talkback rides on. An unrecognised source
+    // lands here too, which is the pre-1.7.0 behaviour for every source.
     if (this.rtspServer) return `${this.rtspServer.url}#timeout=30`;
     // Fallback: direct RTSP (no backchannel) if relay unavailable.
     return this.client.rtspUrl(this.channel, 0);
+  }
+
+  /**
+   * The stream subtype behind one of camera.ui's source ids, or undefined when
+   * the id names nothing this plugin registered — the server mints the ids, so
+   * the source's name is the only link back to the stream it came from.
+   */
+  private subtypeForSource(sourceId: string | undefined): number | undefined {
+    if (!sourceId) return undefined;
+    const source = this.cameraDevice.sources?.find((s) => s._id === sourceId);
+    if (!source) return undefined;
+    return subtypeFromSourceName(source.name);
   }
 
   async getSnapshot(): Promise<ArrayBuffer | undefined> {
@@ -253,10 +285,18 @@ export class AmcrestCamera {
   }
 
   private handleTalkbackRtp(rtp: Buffer): void {
+    // A session that just failed is not retried on the very next packet; see
+    // blockTalkback.
+    if (Date.now() < this.talkbackBlockedUntil) return;
     const target = selectTalkbackTarget(this.capabilities.deviceType);
     if (!this.transcoder) {
+      // Once per session, not once per packet — the backchannel delivers ~50 a
+      // second. This is the first sign anywhere that camera.ui sent audio at all.
+      this.log.debug(
+        `Talkback session opening: ${target.codec} at ${target.sampleRate}Hz, sent as ${target.contentType}`,
+      );
       this.talkbackBody = new PassThrough();
-      this.openTalkbackPost(target.contentType, this.talkbackBody);
+      this.openTalkbackPost(target, this.talkbackBody);
       this.transcoder = new BackchannelTranscoder({
         from: { ...BACKCHANNEL_ADVERTISE },
         to: {
@@ -281,21 +321,60 @@ export class AmcrestCamera {
       });
   }
 
-  private openTalkbackPost(contentType: string, body: PassThrough): void {
+  private openTalkbackPost(target: TalkbackTarget, body: PassThrough): void {
+    // No credentials in this URL — digestFetch authenticates with a header — so it
+    // is safe to log.
     const url = this.client.urlFor(
       `/cgi-bin/audio.cgi?action=postAudio&httptype=singlepart&channel=${this.channel}`,
     );
+    this.log.debug(`Talkback POST to ${url}`);
     void digestFetch({
       url,
       username: this.storage.values.username,
       password: this.storage.values.password,
       method: 'POST',
-      headers: { 'Content-Type': contentType },
+      headers: { 'Content-Type': target.contentType },
       body: body as unknown as BodyInit,
-    }).catch((e) => this.log.error('Talkback POST failed:', e));
+    })
+      .then(async (res) => {
+        // fetch resolves for 4xx and 5xx, so a refusal is invisible unless the
+        // status is read. Not reading it is what made "two-way audio does not
+        // work" produce an empty log.
+        const rejection = describeTalkbackRejection(
+          res.status,
+          res.statusText,
+          await res.text().catch(() => ''),
+        );
+        if (!rejection) {
+          this.log.debug(`Talkback session ended cleanly (HTTP ${res.status})`);
+          return;
+        }
+        this.log.error(rejection);
+        this.blockTalkback();
+      })
+      .catch((e) => {
+        this.log.error('Talkback POST failed:', e);
+        this.blockTalkback();
+      });
+  }
+
+  /**
+   * Tears down a session the camera refused and declines to start another for a
+   * short while. Without the pause the next RTP packet would open a fresh POST
+   * against a device that just said no — around fifty times a second.
+   */
+  private blockTalkback(): void {
+    this.talkbackBlockedUntil = Date.now() + TALKBACK_COOLDOWN_MS;
+    this.resetTalkback();
+    this.log.debug(
+      `Talkback paused for ${TALKBACK_COOLDOWN_MS / 1000}s after the failed session`,
+    );
   }
 
   private resetTalkback(): void {
+    if (this.transcoder || this.talkbackBody) {
+      this.log.debug('Talkback session closing');
+    }
     // Fire-and-forget: close() failures must not become unhandled rejections.
     void this.transcoder?.close().catch(() => {});
     this.transcoder = undefined;
