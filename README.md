@@ -161,6 +161,6 @@ The following are deferred to a future release:
 - **Camera-side recording configuration** — the plugin does not configure the device's own SD-card/NVR recording settings.
 - **Door lock/unlock** — Dahua video-intercom lock relay control is not implemented.
 - **ONVIF-backchannel talkback fallback** — devices that only support two-way audio via an ONVIF backchannel (rather than the native Amcrest/Dahua audio path) are not yet supported.
-- **Dahua-doorbell G.711A talkback** — implemented per the documented codec path but not yet verified against real Dahua-branded doorbell hardware.
+- **Dahua-doorbell G.711A talkback** — implemented per the documented codec path but not yet verified against real Dahua-branded doorbell hardware. If it does not work for you, turn on debug logging: the plugin reports the codec it chose, the request it made, and the status the camera answered with, which is what a report needs to be actionable.
 - **Discovery byte format** — the Dahua UDP discovery probe/response parsing is based on the documented protocol and has not yet been validated against a real device capture; manual add remains the reliable fallback if discovery doesn't find your device.
 - **Camera-side zone configuration** — zones are applied by the plugin, not written to the camera. The device's own recording and alert rules still use whatever regions are configured on it.

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.7.0
+
+Fixes a streaming bug that quietly wasted CPU on every multi-stream camera, and makes two-way audio say what it is doing. Nothing to reconfigure on upgrade; the requirements are unchanged at camera.ui 2.0.24 and Node 24.
+
+- **Streams: asking for the low-resolution source now gets you the low-resolution stream.** Since 1.3.0 the plugin has registered every enabled stream on the camera as its own source, with roles assigned by resolution — but it answered every request for a stream URL with the main one, whatever was asked for. A detector or a recording configured against the low-resolution source was decoding full-resolution video the entire time, which is the exact cost registering the streams separately was meant to avoid. Each source now resolves to the stream it was registered from. The main stream still goes through the plugin's RTSP relay, because that is the path two-way audio rides on; if you have renamed a source in camera.ui the plugin can no longer tell which stream it came from and falls back to the relay, as it did before.
+- **Two-way audio: a camera that refuses talkback now says so.** The plugin posts audio to the device and never looked at the answer. Since a rejected request still counts as a completed one, a camera replying "401, this account may not send audio" or "400, not that codec" produced an empty log and silent failure — indistinguishable from camera.ui never sending anything. Refusals are now reported with the status code, whatever explanation the device included, and a note on what that status usually means for talkback specifically.
+- **Two-way audio: the path is traceable at debug level.** Opening a session logs the codec, sample rate and content type chosen for your device, and the request being made; closing one logs that too. Enough to tell "camera.ui is not sending audio" apart from "the camera is rejecting it" without guessing. It is one line per session, not per packet — the backchannel carries about fifty packets a second.
+- **Two-way audio: a refused session is no longer retried immediately.** A session the camera rejected is torn down and left alone for 30 seconds. Previously the next audio packet would reopen the same doomed request, which at fifty packets a second meant hammering the device for as long as anyone held the talk button.
+
+If Dahua-branded doorbell talkback does not work for you, this release is what makes that reportable — turn on debug logging and the log will name the codec, the request and the camera's answer. That path is still unverified against real Dahua hardware; see [Known limitations](README.md#known-limitations--v2).
+
 ## 1.6.1
 
 A build-tooling release. Nothing about the plugin itself changed — no behaviour difference, no configuration to revisit, and the requirements set in 1.6.0 (camera.ui 2.0.24, Node 24) still stand.

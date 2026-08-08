@@ -458,3 +458,97 @@ test('dispatchEvent: two suppressed Starts for one category still produce a sing
     `one Stop resolves at most one pending suppression: ${JSON.stringify(h.debug)}`,
   );
 });
+
+/**
+ * An AmcrestCamera wired to a fake relay and a fake source list, for exercising
+ * the source-id -> stream URL resolution without a camera on the network.
+ *
+ * `sources` mirrors what camera.ui hands back: the ids it minted, against the
+ * names buildCameraConfig gave each stream at adoption.
+ */
+function streamHarness(
+  sources: { _id: string; name: string }[],
+  opts: { relay?: boolean } = {},
+): AmcrestCamera {
+  const noop = (): void => {};
+  const device = {
+    name: 'Front Door',
+    sources,
+    logger: {
+      log: noop,
+      warn: noop,
+      error: noop,
+      attention: noop,
+      debug: noop,
+    },
+    createStorage: () => ({ values: {}, save: async () => {} }),
+  };
+
+  const camera = new AmcrestCamera(device as unknown as CameraDevice);
+  const internals = camera as unknown as {
+    client: { rtspUrl(channel: number, subtype: number): string };
+    rtspServer?: { url: string };
+  };
+  internals.client = {
+    rtspUrl: (channel, subtype) =>
+      `rtsp://cam/cam/realmonitor?channel=${channel}&subtype=${subtype}`,
+  };
+  if (opts.relay !== false) internals.rtspServer = { url: 'rtsp://relay/live' };
+  return camera;
+}
+
+const SOURCES = [
+  { _id: 'id-main', name: 'main' },
+  { _id: 'id-extra1', name: 'extra1' },
+  { _id: 'id-extra2', name: 'extra2' },
+];
+
+test('getStreamUrl: the main source goes through the relay, which carries talkback', async () => {
+  const camera = streamHarness(SOURCES);
+
+  assert.equal(await camera.getStreamUrl('id-main'), 'rtsp://relay/live#timeout=30');
+});
+
+test('getStreamUrl: a secondary source gets its own subtype, not the main stream', async () => {
+  const camera = streamHarness(SOURCES);
+
+  assert.equal(
+    await camera.getStreamUrl('id-extra1'),
+    'rtsp://cam/cam/realmonitor?channel=1&subtype=1',
+  );
+  assert.equal(
+    await camera.getStreamUrl('id-extra2'),
+    'rtsp://cam/cam/realmonitor?channel=1&subtype=2',
+  );
+});
+
+test('getStreamUrl: an unknown or absent source id falls back to the relay', async () => {
+  const camera = streamHarness(SOURCES);
+
+  assert.equal(await camera.getStreamUrl('id-nope'), 'rtsp://relay/live#timeout=30');
+  assert.equal(await camera.getStreamUrl(), 'rtsp://relay/live#timeout=30');
+});
+
+test('getStreamUrl: a renamed source falls back to the relay rather than guessing', async () => {
+  const camera = streamHarness([{ _id: 'id-main', name: 'Driveway camera' }]);
+
+  assert.equal(await camera.getStreamUrl('id-main'), 'rtsp://relay/live#timeout=30');
+});
+
+test('getStreamUrl: with no relay the main source falls back to direct RTSP', async () => {
+  const camera = streamHarness(SOURCES, { relay: false });
+
+  assert.equal(
+    await camera.getStreamUrl('id-main'),
+    'rtsp://cam/cam/realmonitor?channel=1&subtype=0',
+  );
+});
+
+test('getStreamUrl: a secondary source is unaffected by the relay being down', async () => {
+  const camera = streamHarness(SOURCES, { relay: false });
+
+  assert.equal(
+    await camera.getStreamUrl('id-extra1'),
+    'rtsp://cam/cam/realmonitor?channel=1&subtype=1',
+  );
+});

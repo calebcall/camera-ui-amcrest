@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildCameraConfig } from './adopt.js';
+import {
+  buildCameraConfig,
+  sourceNameForSubtype,
+  subtypeFromSourceName,
+} from './adopt.js';
 
 test('builds a config with main+sub sources and snapshot on main', () => {
   const config = buildCameraConfig({
@@ -110,4 +114,23 @@ test('builds a source per stream when the camera serves three', () => {
     config.sources.map((s) => s.name),
     ['main', 'extra2', 'extra1'],
   );
+});
+
+test('source names round-trip to the subtype they were minted from', () => {
+  for (const subtype of [0, 1, 2, 3]) {
+    assert.equal(
+      subtypeFromSourceName(sourceNameForSubtype(subtype)),
+      subtype,
+      `subtype ${subtype} did not survive the round trip`,
+    );
+  }
+});
+
+test('a name the plugin never minted resolves to no subtype', () => {
+  // A user is free to rename a source in camera.ui; the caller falls back to the
+  // relay rather than guessing a subtype.
+  assert.equal(subtypeFromSourceName('Driveway'), undefined);
+  assert.equal(subtypeFromSourceName('extra'), undefined);
+  assert.equal(subtypeFromSourceName('extra1x'), undefined);
+  assert.equal(subtypeFromSourceName(''), undefined);
 });

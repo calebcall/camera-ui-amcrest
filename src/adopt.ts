@@ -20,12 +20,34 @@ export interface BuildCameraConfigInput {
   streams: AmcrestStream[];
 }
 
+/**
+ * The name adoption gives the stream at `subtype`.
+ *
+ * Paired with subtypeFromSourceName so the two cannot drift: the name is the
+ * only record of which stream a source came from that survives into camera.ui,
+ * and getStreamUrl reads it back to answer per-source URL requests.
+ */
+export function sourceNameForSubtype(subtype: number): string {
+  return subtype === 0 ? 'main' : `extra${subtype}`;
+}
+
+/**
+ * The subtype a source name was minted from, or undefined if this plugin never
+ * minted it — a user is free to rename a source in camera.ui, and guessing a
+ * subtype from an arbitrary name would silently serve the wrong stream.
+ */
+export function subtypeFromSourceName(name: string): number | undefined {
+  if (name === 'main') return 0;
+  const match = /^extra(\d+)$/.exec(name);
+  return match ? Number(match[1]) : undefined;
+}
+
 export function buildCameraConfig(input: BuildCameraConfigInput): CameraConfig {
   // One source per stream the camera actually serves, ordered high to low as
   // parseEncodeConfig ranked them.
   const sources: CameraConfig['sources'] = input.streams.map(
     (stream, index) => ({
-      name: stream.subtype === 0 ? 'main' : `extra${stream.subtype}`,
+      name: sourceNameForSubtype(stream.subtype),
       role: stream.role,
       urls: [
         buildRtspUrl({
