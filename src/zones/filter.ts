@@ -113,9 +113,26 @@ function inZone(box: BoundingBox, zone: CompiledZone): boolean {
  * Applies camera.ui's zone model to a single detection.
  *
  * `type` decides what "in the zone" means; `filter` decides whether being in it
- * qualifies or disqualifies. A detection with no applicable zones is kept —
- * that is what makes this whole feature invisible to anyone who has not drawn
- * a zone, and why it needs no opt-in setting.
+ * qualifies or disqualifies.
+ *
+ * The subtle rule is what happens to a label no zone mentions, and it is not
+ * the intuitive one. Drawing ANY gating zone switches the camera into
+ * allow-listed mode: from then on a label that appears in no zone's label list
+ * is dropped outright, not waved through. Only a camera with no gating zones at
+ * all keeps everything, which is still what makes the feature invisible to
+ * anyone who has not drawn one.
+ *
+ * This mirrors camera.ui's own rust zone filter, verified against it directly
+ * rather than inferred. It matters because the two run side by side: the core
+ * filters detections from its frame pipeline, this plugin filters the events
+ * the camera reports, and the same zones must mean the same thing on both
+ * paths. Until 1.8.0 this function returned "keep" for an unmentioned label —
+ * so a camera whose zones listed only person reported packages through Amcrest
+ * that the core silently dropped.
+ *
+ * Privacy masks are deliberately excluded from that test. A mask is a redaction,
+ * not a gate, and a camera carrying nothing but privacy masks is not in
+ * allow-listed mode — the core behaves the same way.
  */
 export function keepDetection(
   box: BoundingBox,
@@ -135,8 +152,19 @@ export function keepDetection(
       reason: `${describeBox(box)} inside privacy mask '${mask.name}'`,
     };
 
+  // Gating zones for ANY label, which is what decides whether this camera is in
+  // allow-listed mode at all — as opposed to `gates` below, which is the subset
+  // that actually has an opinion about THIS label.
+  const anyGates = zones.some((z) => !z.isPrivacyMask);
   const gates = applicable.filter((z) => !z.isPrivacyMask);
-  if (gates.length === 0) return KEEP;
+
+  if (gates.length === 0) {
+    if (!anyGates) return KEEP;
+    return {
+      keep: false,
+      reason: `${describeBox(box)} is a '${label}' and no zone lists that label`,
+    };
+  }
 
   const excluded = gates.find((z) => z.filter === 'exclude' && inZone(box, z));
   if (excluded) {

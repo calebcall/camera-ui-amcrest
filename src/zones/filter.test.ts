@@ -221,11 +221,30 @@ test('keepDetection: the four type x filter combinations', () => {
   }
 });
 
-test('keepDetection: a zone whose labels exclude this one is ignored entirely', () => {
+test('keepDetection: a label no zone mentions is dropped once any zone exists', () => {
   const zones = compileZones([zone({ labels: ['vehicle'] })]);
-  // An include zone that does not apply to 'person' must not gate a person.
-  assert.equal(keepDetection(OUTSIDE, 'person', zones).keep, true);
+  // Not the intuitive reading, but it is what camera.ui's rust filter does, and
+  // the two have to agree — the core filters its frame pipeline while this
+  // filters the camera's own events, from the same zone config. Drawing any
+  // gating zone puts the camera in allow-listed mode, so 'person' appearing in
+  // no zone's label list means "not wanted", not "unconstrained".
+  const person = keepDetection(OUTSIDE, 'person', zones);
+  assert.equal(person.keep, false);
+  assert.match(
+    person.keep === false ? person.reason : '',
+    /no zone lists that label/,
+  );
+
   assert.equal(keepDetection(OUTSIDE, 'vehicle', zones).keep, false);
+});
+
+test('keepDetection: privacy masks alone do not put the camera in allow-listed mode', () => {
+  // A mask is a redaction, not a gate. A camera carrying only masks still keeps
+  // labels none of them mention, matching the core.
+  const zones = compileZones([
+    zone({ name: 'Road', isPrivacyMask: true, labels: ['vehicle'] }),
+  ]);
+  assert.equal(keepDetection(OUTSIDE, 'person', zones).keep, true);
 });
 
 test('keepDetection: empty labels applies the zone to every label', () => {

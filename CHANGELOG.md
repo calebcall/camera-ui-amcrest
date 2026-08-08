@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.8.0
+
+Detection zones now behave exactly as they do in camera.ui itself. One rule differed, and it was the non-obvious one.
+
+Drawing any detection zone puts a camera into allow-listed mode: from that point a label appearing in **no** zone's label list is dropped, not waved through. Only a camera with no zones at all keeps everything. This plugin previously did the opposite for that case, so a camera whose zones listed only `person` reported package and animal events that camera.ui's own pipeline silently discarded — the same zones meaning two different things depending on which path a detection arrived by.
+
+Verified directly against camera.ui's rust zone filter rather than inferred from its source.
+
+- Objects: a detection whose label no zone mentions is now suppressed, and says so — `... is a 'package' and no zone lists that label`.
+- Privacy masks are deliberately not counted. A mask is a redaction, not a gate, so a camera carrying only masks still keeps labels none of them mention. This matches the core.
+- Everything else is unchanged: `include`/`exclude`, `intersect`/`contain`, per-zone labels, and the existing precedence between them.
+
+**You may see fewer detections after upgrading**, on any camera whose zones do not list every label you care about. If a label went missing, add it to a zone's label list. Nothing is written to the camera; zones stay server-side.
+
 ## 1.7.0
 
 Fixes a streaming bug that quietly wasted CPU on every multi-stream camera, and makes two-way audio say what it is doing. Nothing to reconfigure on upgrade; the requirements are unchanged at camera.ui 2.0.24 and Node 24.
