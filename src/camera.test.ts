@@ -506,7 +506,10 @@ const SOURCES = [
 test('getStreamUrl: the main source goes through the relay, which carries talkback', async () => {
   const camera = streamHarness(SOURCES);
 
-  assert.equal(await camera.getStreamUrl('id-main'), 'rtsp://relay/live#timeout=30');
+  assert.equal(
+    await camera.getStreamUrl('id-main'),
+    'rtsp://relay/live#timeout=30',
+  );
 });
 
 test('getStreamUrl: a secondary source gets its own subtype, not the main stream', async () => {
@@ -525,14 +528,20 @@ test('getStreamUrl: a secondary source gets its own subtype, not the main stream
 test('getStreamUrl: an unknown or absent source id falls back to the relay', async () => {
   const camera = streamHarness(SOURCES);
 
-  assert.equal(await camera.getStreamUrl('id-nope'), 'rtsp://relay/live#timeout=30');
+  assert.equal(
+    await camera.getStreamUrl('id-nope'),
+    'rtsp://relay/live#timeout=30',
+  );
   assert.equal(await camera.getStreamUrl(), 'rtsp://relay/live#timeout=30');
 });
 
 test('getStreamUrl: a renamed source falls back to the relay rather than guessing', async () => {
   const camera = streamHarness([{ _id: 'id-main', name: 'Driveway camera' }]);
 
-  assert.equal(await camera.getStreamUrl('id-main'), 'rtsp://relay/live#timeout=30');
+  assert.equal(
+    await camera.getStreamUrl('id-main'),
+    'rtsp://relay/live#timeout=30',
+  );
 });
 
 test('getStreamUrl: with no relay the main source falls back to direct RTSP', async () => {
