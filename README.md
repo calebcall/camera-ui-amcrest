@@ -62,29 +62,47 @@ Because detection happens on the camera rather than on frames decoded by camera.
 
 Plain motion carries no coordinates at all, so it is always reported in full. If plain motion is your main source of noise, turn it off on the camera and rely on the smart events instead.
 
-Object types are filtered by the same mechanism: a zone's **labels** decide which detections it applies to. There is no separate "never alert me about vehicles" setting — express it as a zone. To ignore vehicles everywhere, draw an `exclude` zone covering the frame with its labels set to `vehicle`.
+### Which zone lists are used
+
+camera.ui draws five kinds of zone. This plugin uses two of them:
+
+| Zone list   | Used | What it does here                                                                              |
+| ----------- | ---- | ---------------------------------------------------------------------------------------------- |
+| **Object**  | yes  | An object counts only where an object zone claims its label.                                    |
+| **Privacy** | yes  | An object wholly inside one is dropped, unless the zone is set to keep detections.              |
+| **Alert**   | no   | Never filters — it decides which detections may raise a push notification. camera.ui applies it. |
+| **Motion**  | no   | Scopes the `motion` label only, and `VideoMotion` carries no coordinates to test.                |
+| **Lines**   | no   | Line crossings arrive as their own camera-side events.                                          |
+
+Object zones are include gates: every one of them says where something *does* count, never where it doesn't. To keep something out of an area, use a privacy zone.
+
+### Filtering by object type
+
+A zone's **labels** decide which detections it applies to, and they also decide which labels are watched at all. Once every object zone names its labels, a label that none of them names is dropped wherever it appears — that is how you express "never alert me about vehicles": draw your object zones and list only `person`.
+
+One object zone with no labels turns that off: it means the zones constrain *where* every label counts, not *which* labels count.
 
 ### Choosing intersect or contain
 
-|               | `include`                                   | `exclude`                          |
-| ------------- | ------------------------------------------- | ---------------------------------- |
-| **intersect** | alert if the object touches the zone at all | drop if it touches the zone at all |
-| **contain**   | alert only if the object is wholly inside   | drop only if it is wholly inside   |
+|               | Object zone                                 |
+| ------------- | ------------------------------------------- |
+| **intersect** | alert if the object touches the zone at all |
+| **contain**   | alert only if the object is wholly inside   |
 
-**Recommended: `intersect` for include zones, `contain` for exclude zones.**
+**Recommended: `intersect`.**
 
-`contain` combined with `include` is the strict pairing, and on this hardware it will miss almost anything that does not begin wholly inside the zone. Because the camera reports an object's position only once, at first detection, that single sample has to satisfy the whole zone. It misfires in two common ways:
+`contain` is the strict setting, and on this hardware it will miss almost anything that does not begin wholly inside the zone. Because the camera reports an object's position only once, at first detection, that single sample has to satisfy the whole zone. It misfires in two common ways:
 
 - Someone entering from the edge of frame is only partly inside the zone at first, so they do not alert until they are wholly within it.
 - Someone close to the camera has a large bounding box. If your zone is a modest patch of driveway, that box may never fit wholly inside it, so they never alert even while standing in the middle of the zone.
 
-`contain` with `exclude` is the safe pairing — "ignore things wholly inside the neighbour's garden", where someone straddling the boundary still alerts.
+Privacy zones always match on containment, so "ignore things wholly inside the neighbour's garden" still lets someone straddling the boundary alert.
 
 ### Known limitation
 
 Filtering uses the position reported when the camera first detects the object, because that is the only position available. The camera sends exactly one "started" and one "stopped" event per object, 30–60 seconds apart, with no updates in between — and the two positions can describe completely different parts of the frame. In one measured case a person was first seen in the upper middle of the picture and last seen in the lower left, with no overlap between the two.
 
-So if someone is first picked up outside your zone and then walks into it, **no alert is produced**. Draw `intersect` include zones generously larger than the area you actually care about, so that the object's _first_ detection already falls inside them.
+So if someone is first picked up outside your zone and then walks into it, **no alert is produced**. Draw object zones generously larger than the area you actually care about, so that the object's _first_ detection already falls inside them.
 
 Enable debug logging to see whether this is happening to you — see [Checking what is being filtered](#checking-what-is-being-filtered) below.
 
@@ -94,8 +112,8 @@ Enable debug logging in camera.ui and look for:
 
 ```
 SmartMotionHuman passed detection zones (1 zone(s)): box [0.38,0.32,0.10,0.51]
-SmartMotionHuman suppressed by detection zones: box [0.38,0.11,0.05,0.05] outside include zone(s) 'Driveway'
-SmartMotionVehicle partially filtered by detection zones: box [0.71,0.33,0.09,0.21] inside exclude zone 'Street'
+SmartMotionHuman suppressed by detection zones: box [0.38,0.11,0.05,0.05] outside object zone(s) 'Driveway'
+SmartMotionVehicle partially filtered by detection zones: box [0.71,0.33,0.09,0.21] inside privacy mask 'Street'
 Detection zones updated: 2 zone(s)
 ```
 
@@ -105,7 +123,7 @@ Three more lines describe what happened to a suppressed object by the time it le
 
 ```
 SmartMotionVehicle stayed outside the zones for the whole event — correctly suppressed
-SmartMotionHuman entered the zones during the event — no alert was sent (see #26). Stop box [0.15,0.72,0.18,0.28] would pass; Start was suppressed: box [0.55,0.29,0.08,0.37] outside include zone(s) 'Driveway'
+SmartMotionHuman entered the zones during the event — no alert was sent (see #26). Stop box [0.15,0.72,0.18,0.28] would pass; Start was suppressed: box [0.55,0.29,0.08,0.37] outside object zone(s) 'Driveway'
 SmartMotionHuman left without coordinates — cannot tell whether it entered the zones
 ```
 
