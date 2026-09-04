@@ -50,7 +50,9 @@ This is **not** the same as your `Amcrest Smart Home` cloud account login. The c
 
 ## Detection zones
 
-Zones drawn in camera.ui are applied to this plugin's events by the plugin itself. Draw them as normal — there is nothing to enable, and no zone settings on the plugin's own page.
+Zones drawn in camera.ui apply to this plugin's events. Draw them as normal — there is nothing to enable, and no zone settings on the plugin's own page.
+
+**camera.ui does the filtering, not the plugin.** Everything a camera-side sensor reports goes through the host's own zone filter, which judges a tracked and optionally refined box rather than the single coarse one the camera sends. The plugin reports what the camera saw and, when you have zones drawn, says in the debug log what those zones make of it — see [Checking what is being filtered](#checking-what-is-being-filtered). Because the host has the better box, its verdict and the log line can occasionally differ; the log describes the boxes as they arrived.
 
 Because detection happens on the camera rather than on frames decoded by camera.ui, zones can only be applied to events that tell us _where_ something happened:
 
@@ -67,13 +69,13 @@ Plain motion carries no coordinates at all, so it is always reported in full. If
 
 camera.ui draws five kinds of zone. This plugin uses two of them:
 
-| Zone list   | Used | What it does here                                                                                |
-| ----------- | ---- | ------------------------------------------------------------------------------------------------ |
-| **Object**  | yes  | An object counts only where an object zone claims its label.                                     |
-| **Privacy** | yes  | An object wholly inside one is dropped, unless the zone is set to keep detections.               |
-| **Alert**   | no   | Never filters — it decides which detections may raise a push notification. camera.ui applies it. |
-| **Motion**  | no   | Scopes the `motion` label only, and `VideoMotion` carries no coordinates to test.                |
-| **Lines**   | no   | Line crossings arrive as their own camera-side events.                                           |
+| Zone list   | Reported on | What it does                                                                       |
+| ----------- | ----------- | ---------------------------------------------------------------------------------- |
+| **Object**  | yes         | An object counts only where an object zone claims its label.                       |
+| **Privacy** | yes         | An object wholly inside one is dropped, unless the zone is set to keep detections. |
+| **Alert**   | no          | Never filters — it decides which detections may raise a push notification.         |
+| **Motion**  | no          | Scopes the `motion` label only, and `VideoMotion` carries no coordinates to test.  |
+| **Lines**   | no          | Line crossings arrive as their own camera-side events.                             |
 
 Object zones are include gates: every one of them says where something _does_ count, never where it doesn't. To keep something out of an area, use a privacy zone.
 
@@ -112,19 +114,19 @@ Enable debug logging to see whether this is happening to you — see [Checking w
 Enable debug logging in camera.ui and look for:
 
 ```
-SmartMotionHuman passed detection zones (1 zone(s)): box [0.38,0.32,0.10,0.51]
-SmartMotionHuman suppressed by detection zones: box [0.38,0.11,0.05,0.05] outside object zone(s) 'Driveway'
-SmartMotionVehicle partially filtered by detection zones: box [0.71,0.33,0.09,0.21] inside privacy mask 'Street'
+SmartMotionHuman is inside the detection zones (1 zone(s)): box [0.38,0.32,0.10,0.51]
+SmartMotionHuman is outside the detection zones: box [0.38,0.11,0.05,0.05] outside object zone(s) 'Driveway' — camera.ui drops detections its zones reject
+SmartMotionVehicle is partly outside the detection zones: box [0.71,0.33,0.09,0.21] inside privacy mask 'Street'
 Detection zones updated: 2 zone(s)
 ```
 
-The first line is the one to look for when you are checking that a zone works at all: a detection that passes cleanly says so, naming the box it was tested with. Without it, a working zone looks the same in the log as no zone at all.
+The first line is the one to look for when you are checking that a zone works at all: a detection that lands cleanly inside says so, naming the box it was measured with. Without it, a working zone looks the same in the log as no zone at all.
 
-Three more lines describe what happened to a suppressed object by the time it left:
+Three more lines describe where an object the zones rejected had got to by the time it left:
 
 ```
-SmartMotionVehicle stayed outside the zones for the whole event — correctly suppressed
-SmartMotionHuman entered the zones during the event — no alert was sent (see #26). Stop box [0.15,0.72,0.18,0.28] would pass; Start was suppressed: box [0.55,0.29,0.08,0.37] outside object zone(s) 'Driveway'
+SmartMotionVehicle stayed outside the zones for the whole event — correctly rejected
+SmartMotionHuman entered the zones during the event, after a Start the zones reject (see #26). Stop box [0.15,0.72,0.18,0.28] is inside; Start was box [0.55,0.29,0.08,0.37] outside object zone(s) 'Driveway'
 SmartMotionHuman left without coordinates — cannot tell whether it entered the zones
 ```
 
@@ -132,17 +134,17 @@ The second is the limitation above, caught in the act. If you see it often, the 
 
 The third appears when the "stopped" event carries no position at all: nothing can be concluded either way, and it is said explicitly so that a quiet log means "this is not happening to you" rather than "this could never be measured".
 
-Editing your zones ends any of these that are still pending. A suppression recorded against the old zones cannot be judged against the new ones, so the object that was in flight when you saved goes unreported rather than being described using two different zone lists.
+Editing your zones ends any of these that are still pending. A rejection recorded against the old zones cannot be judged against the new ones, so the object that was in flight when you saved goes undescribed rather than being measured against two different zone lists.
 
 The `box` is the detection's position as `[x, y, width, height]`, in fractions of the frame from the top-left corner. It tells you whether the zone or the camera's own coordinates are the surprise — a value of `1.00` on an edge means the object was clipped at the edge of frame.
 
 If a camera reports detections without coordinates, you will see this once per event type:
 
 ```
-SmartMotionHuman (person) carried no coordinates, so detection zones cannot be applied to it — it is reported unfiltered. Further occurrences are not logged.
+SmartMotionHuman (person) carried no coordinates, so detection zones cannot be applied to it — camera.ui lets a positionless detection through. Further occurrences are not logged.
 ```
 
-That is expected on some firmware. Those events are always reported rather than dropped, so a terse camera never costs you a real detection. Note that this line is only logged when you have zones drawn — with no zones there is nothing for the missing coordinates to cost you, so it is not worth saying.
+That is expected on some firmware. A detection with no position is let through rather than dropped, so a terse camera never costs you a real detection. Note that this line is only logged when you have zones drawn — with no zones there is nothing for the missing coordinates to cost you, so it is not worth saying.
 
 ## Tamper and fault sensors
 
@@ -221,4 +223,4 @@ The following are deferred to a future release:
 - **ONVIF-backchannel talkback fallback** — devices that only support two-way audio via an ONVIF backchannel (rather than the native Amcrest/Dahua audio path) are not yet supported.
 - **Dahua-doorbell G.711A talkback** — implemented per the documented codec path but not yet verified against real Dahua-branded doorbell hardware. If it does not work for you, turn on debug logging: the plugin reports the codec it chose, the request it made, and the status the camera answered with, which is what a report needs to be actionable.
 - **Discovery byte format** — the Dahua UDP discovery probe/response parsing is based on the documented protocol and has not yet been validated against a real device capture; manual add remains the reliable fallback if discovery doesn't find your device.
-- **Camera-side zone configuration** — zones are applied by the plugin, not written to the camera. The device's own recording and alert rules still use whatever regions are configured on it.
+- **Camera-side zone configuration** — zones are applied by camera.ui, not written to the camera. The device's own recording and alert rules still use whatever regions are configured on it.
