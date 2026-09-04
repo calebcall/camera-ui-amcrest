@@ -28,7 +28,16 @@ export type AmcrestClassification =
     // matching `Stop`. Consumers must clear these on a timer of their own.
     momentary?: boolean;
   }
-  | { kind: 'doorbell' };
+  | { kind: 'doorbell' }
+  | {
+    kind: 'tamper' | 'problem';
+    /** The event code, so one sensor can track several codes independently. */
+    code: string;
+    active: boolean;
+    // Same meaning as on an object event: `action=Pulse` never gets a matching
+    // `Stop`, so the consumer has to expire it itself or the sensor latches.
+    momentary?: boolean;
+  };
 
 /**
  * Firmware disagrees on the payload shape. Smart events use `Object`/`Objects`
@@ -127,10 +136,58 @@ function objectResult(
   };
 }
 
+/**
+ * Codes that mean someone or something has interfered with what the camera can
+ * see, as opposed to the camera being broken.
+ *
+ * Taken from the Dahua CGI event list rather than from a capture — the same
+ * basis as `CallNoAnswered`. Firmware varies in which of these it emits, and a
+ * device that emits none simply never reports tamper. Anything here that turns
+ * out to mean something else on real hardware should be moved, not guessed at
+ * again.
+ */
+const TAMPER_CODES = new Set([
+  'VideoBlind',
+  'SceneChange',
+  'VideoUnFocus',
+  'VideoAbnormalDetection',
+]);
+
+/** Codes that mean the device itself is unwell. Same provenance as TAMPER_CODES. */
+const PROBLEM_CODES = new Set([
+  'VideoLoss',
+  'StorageNotExist',
+  'StorageFailure',
+  'StorageLowSpace',
+]);
+
+/**
+ * A tamper or problem event.
+ *
+ * These are plain state codes with no payload worth reading, so the code itself
+ * is carried through: one sensor stands for several codes, and it can only tell
+ * a `VideoBlind` Stop from a `SceneChange` Stop by name.
+ */
+function stateResult(
+  kind: 'tamper' | 'problem',
+  ev: AmcrestEvent,
+): AmcrestClassification {
+  const momentary = ev.action === 'Pulse';
+  return {
+    kind,
+    code: ev.code,
+    active: momentary || ev.action === 'Start',
+    ...(momentary ? { momentary: true } : {}),
+  };
+}
+
 export function classifyAmcrestEvent(
   ev: AmcrestEvent,
 ): AmcrestClassification | undefined {
   const active = ev.action === 'Start';
+
+  if (TAMPER_CODES.has(ev.code)) return stateResult('tamper', ev);
+  if (PROBLEM_CODES.has(ev.code)) return stateResult('problem', ev);
 
   switch (ev.code) {
     case 'VideoMotion':

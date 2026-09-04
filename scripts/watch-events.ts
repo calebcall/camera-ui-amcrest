@@ -54,6 +54,14 @@ function describe(blob: string): string | undefined {
   const c = classifyAmcrestEvent(ev);
   const head = `${stamp()}  ${ev.code.padEnd(24)} action=${ev.action}`;
   if (!c) return `${head}  -> UNHANDLED`;
+  if (c.kind === 'tamper' || c.kind === 'problem') {
+    // The state matters as much as the kind here: these mappings come from the
+    // Dahua CGI list rather than a capture, so this output is how a report
+    // shows that a code exists and whether it latches or pulses.
+    const state = [c.active ? 'active' : 'clear'];
+    if (c.momentary) state.push('momentary');
+    return `${head}  -> ${c.kind} ${state.join(' ')}`;
+  }
   if (c.kind !== 'object') return `${head}  -> ${c.kind}`;
 
   const parts = [c.category, c.active ? 'active' : 'clear'];
