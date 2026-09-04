@@ -22,7 +22,9 @@ import {
   AmcrestDoorbellTrigger,
   AmcrestMotionSensor,
   AmcrestObjectSensor,
+  AmcrestProblemSensor,
   AmcrestPTZSensor,
+  AmcrestTamperSensor,
 } from './sensors/index.js';
 import {
   compileZones,
@@ -32,7 +34,10 @@ import {
   hasUsableCoordinates,
 } from './zones/filter.js';
 
-import type { AmcrestDetection } from './amcrest/classify.js';
+import type {
+  AmcrestClassification,
+  AmcrestDetection,
+} from './amcrest/classify.js';
 import type { TalkbackTarget } from './amcrest/talkback.js';
 import type {
   AmcrestCapabilities,
@@ -99,6 +104,8 @@ export class AmcrestCamera {
   private audio?: AmcrestAudioSensor;
   private doorbell?: AmcrestDoorbellTrigger;
   private ptz?: AmcrestPTZSensor;
+  private tamper?: AmcrestTamperSensor;
+  private problem?: AmcrestProblemSensor;
 
   private zones: CompiledZone[] = [];
   private zonesSub?: Disposable;
@@ -284,6 +291,8 @@ export class AmcrestCamera {
     this.zonesSub = undefined;
     this.suppressedStarts.clear();
     this.object?.destroy();
+    this.tamper?.destroy();
+    this.problem?.destroy();
     this.resetTalkback();
     void this.rtspServer?.shutdown();
     void this.relay?.stop();
@@ -459,6 +468,15 @@ export class AmcrestCamera {
     this.audio = new AmcrestAudioSensor();
     await this.cameraDevice.addSensor(this.audio);
 
+    // Registered unconditionally: whether a camera emits these codes cannot be
+    // probed, only observed, and a sensor that stays false is a truthful answer
+    // for a device that never reports interference or a fault.
+    this.tamper = new AmcrestTamperSensor();
+    await this.cameraDevice.addSensor(this.tamper);
+
+    this.problem = new AmcrestProblemSensor();
+    await this.cameraDevice.addSensor(this.problem);
+
     if (this.capabilities.doorbell) {
       this.doorbell = new AmcrestDoorbellTrigger();
       await this.cameraDevice.addSensor(this.doorbell);
@@ -580,7 +598,37 @@ export class AmcrestCamera {
       case 'doorbell':
         this.doorbell?.trigger();
         break;
+      case 'tamper':
+        this.reportState(this.tamper, c, 'Tamper');
+        break;
+      case 'problem':
+        this.reportState(this.problem, c, 'Problem');
+        break;
     }
+  }
+
+  /**
+   * Applies a tamper or problem event to its sensor and says so.
+   *
+   * These codes are classified from the Dahua CGI list rather than from a
+   * capture, so the log line is the record of which ones a given camera really
+   * emits — worth having the first time each code appears, and not worth
+   * repeating after that.
+   */
+  private reportState(
+    sensor: AmcrestTamperSensor | AmcrestProblemSensor | undefined,
+    c: Extract<AmcrestClassification, { kind: 'tamper' | 'problem' }>,
+    label: string,
+  ): void {
+    if (!sensor) return;
+    if (c.momentary) sensor.pulse(c.code);
+    else sensor.report(c.code, c.active);
+    const held = sensor.activeCodes;
+    this.log.debug(
+      held.length > 0
+        ? `${label} active: ${held.join(', ')}`
+        : `${label} cleared (${c.code} ended)`,
+    );
   }
 
   /**
