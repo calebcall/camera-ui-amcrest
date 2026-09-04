@@ -3,7 +3,7 @@ import { PassThrough } from 'node:stream';
 import { AvSource, BackchannelTranscoder, Relay } from '@seydx/rtsp';
 
 import { subtypeFromSourceName } from './adopt.js';
-import { AmcrestClient } from './amcrest/api.js';
+import { AmcrestClient, AmcrestSnapshotError } from './amcrest/api.js';
 import { classifyAmcrestEvent } from './amcrest/classify.js';
 import { classifyDevice } from './amcrest/device.js';
 import { digestFetch } from './amcrest/digest-auth.js';
@@ -118,6 +118,13 @@ export class AmcrestCamera {
    */
   private readonly suppressedStarts = new Map<DetectionLabel, string>();
 
+  /**
+   * The last snapshot failure already reported at error level; see
+   * reportSnapshotFailure. Cleared by the next successful snapshot, so a camera
+   * that recovers and fails again says so again.
+   */
+  private snapshotFailure?: string;
+
   private eventAbort?: AbortController;
   private eventReconnectStreak = 0;
   private readonly unhandledCodes = new UnhandledCodeTracker();
@@ -221,18 +228,49 @@ export class AmcrestCamera {
     return subtypeFromSourceName(source.name);
   }
 
+  /**
+   * A JPEG still, or undefined when the camera would not give one.
+   *
+   * Returning undefined is load-bearing rather than merely tidy: camera.ui asks
+   * this plugin before it asks go2rtc, and it takes any non-empty answer, caches
+   * it and stops looking. Handing back a body the camera refused would suppress
+   * the fallback that could have produced a picture.
+   */
   async getSnapshot(): Promise<ArrayBuffer | undefined> {
     if (!this.client) return undefined;
     try {
       const buf = await this.client.snapshot(this.channel);
+      this.snapshotFailure = undefined;
       return buf.buffer.slice(
         buf.byteOffset,
         buf.byteOffset + buf.byteLength,
       ) as ArrayBuffer;
     } catch (error) {
-      this.log.error('Snapshot failed:', error);
+      this.reportSnapshotFailure(error);
       return undefined;
     }
+  }
+
+  /**
+   * Says a snapshot failed, loudly the first time and quietly while it stays
+   * the same.
+   *
+   * Snapshots are taken on a timer and again on every event, so a camera that
+   * has stopped serving them would fill the log with one identical line a
+   * minute. The first occurrence is the one that has to be visible; a change in
+   * the message means something else is wrong and earns another.
+   */
+  private reportSnapshotFailure(error: unknown): void {
+    const message =
+      error instanceof AmcrestSnapshotError
+        ? error.message
+        : `Snapshot failed: ${String(error)}`;
+    if (message === this.snapshotFailure) {
+      this.log.debug(message);
+      return;
+    }
+    this.snapshotFailure = message;
+    this.log.error(message);
   }
 
   destroy(): void {
