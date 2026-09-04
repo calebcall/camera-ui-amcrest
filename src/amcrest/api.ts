@@ -29,6 +29,14 @@ export interface AmcrestClientOptions {
  */
 const SNAPSHOT_TIMEOUT_MS = 10_000;
 
+/**
+ * How long the small control-plane calls get. These run during startup, and a
+ * camera that accepts the connection and then stalls would otherwise hold up
+ * the whole plugin: `configureCameras` brings cameras up one at a time, and an
+ * untimed fetch here never returns to let the next one start.
+ */
+const CONTROL_TIMEOUT_MS = 10_000;
+
 /** Thrown when the camera answers snapshot.cgi with something that is not a picture. */
 export class AmcrestSnapshotError extends Error {
   constructor(message: string) {
@@ -74,7 +82,7 @@ export class AmcrestClient {
       method: init?.method,
       headers: init?.headers,
       body: init?.body,
-      signal: init?.signal,
+      signal: init?.signal ?? AbortSignal.timeout(CONTROL_TIMEOUT_MS),
     });
     // A final 401 (after the digest handshake) means the credentials are wrong.
     // Surface it clearly instead of letting callers misread the 401 body (e.g.

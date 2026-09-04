@@ -818,3 +818,114 @@ test('dispatchEvent: a tamper Pulse activates and expires on its own', (t) => {
   t.mock.timers.tick(30_000);
   assert.equal(h.tamper[h.tamper.length - 1], false);
 });
+
+/**
+ * An AmcrestCamera driven through setupSensors with an addSensor that refuses
+ * whichever sensors the test names.
+ *
+ * The host can refuse a sensor for reasons that have nothing to do with the
+ * camera working — an in-place update that adds a sensor type is refused until
+ * camera.ui's stored contract catches up. That must cost the sensor, not the
+ * plugin. See #68.
+ */
+function sensorHarness(refuse: (name: string) => boolean): {
+  setup: () => Promise<void>;
+  registered: string[];
+  warnings: string[];
+  fields: () => Record<string, boolean>;
+} {
+  const registered: string[] = [];
+  const warnings: string[] = [];
+  const noop = (): void => {};
+  const device = {
+    name: 'Front Door',
+    logger: {
+      log: noop,
+      error: noop,
+      debug: noop,
+      attention: noop,
+      warn: (...parts: unknown[]) => warnings.push(parts.join(' ')),
+    },
+    createStorage: () => ({ values: {}, save: async () => {} }),
+    addSensor: async (sensor: { name: string }) => {
+      if (refuse(sensor.name)) {
+        throw new Error(
+          `cannot provide sensor type "x" - not declared in contract.provides`,
+        );
+      }
+      registered.push(sensor.name);
+    },
+  };
+
+  const camera = new AmcrestCamera(device as unknown as CameraDevice);
+  const internals = camera as unknown as {
+    capabilities: { doorbell: boolean; ptz: boolean };
+    setupSensors(): Promise<void>;
+    motion?: unknown;
+    object?: unknown;
+    audio?: unknown;
+    tamper?: unknown;
+    problem?: unknown;
+  };
+  internals.capabilities = { doorbell: false, ptz: false };
+
+  return {
+    setup: () => internals.setupSensors(),
+    registered,
+    warnings,
+    fields: () => ({
+      motion: internals.motion !== undefined,
+      object: internals.object !== undefined,
+      audio: internals.audio !== undefined,
+      tamper: internals.tamper !== undefined,
+      problem: internals.problem !== undefined,
+    }),
+  };
+}
+
+test('setupSensors: a refused sensor is warned about and the rest still register', async () => {
+  // The 1.8.0 -> 1.9.0 upgrade failure: camera.ui validates against the contract
+  // in its stored plugin record, which had not caught up with the new bundle, so
+  // it refused 'tamper'. That must not take the camera down with it.
+  const h = sensorHarness((name) => name === 'Amcrest Tamper');
+
+  await h.setup();
+
+  assert.ok(
+    !h.registered.includes('Amcrest Tamper'),
+    'the refused sensor must not be recorded as registered',
+  );
+  assert.deepEqual(h.registered, [
+    'Amcrest Motion',
+    'Amcrest Object',
+    'Amcrest Audio',
+    'Amcrest Problem',
+  ]);
+  assert.equal(h.warnings.length, 1);
+  assert.match(h.warnings[0], /'Amcrest Tamper' was refused by camera\.ui/);
+});
+
+test('setupSensors: a refused sensor leaves its field unset rather than half-built', async () => {
+  const h = sensorHarness((name) => name === 'Amcrest Tamper');
+
+  await h.setup();
+
+  assert.deepEqual(h.fields(), {
+    motion: true,
+    object: true,
+    audio: true,
+    tamper: false,
+    problem: true,
+  });
+});
+
+test('setupSensors: a host that refuses everything still lets the camera come up', async () => {
+  // setupSensors is awaited inside initialize(), so a throw here used to abort
+  // the whole plugin. Completing is the point.
+  const h = sensorHarness(() => true);
+
+  await h.setup();
+
+  assert.deepEqual(h.registered, []);
+  assert.equal(h.warnings.length, 5);
+});

@@ -6,6 +6,7 @@ import {
   sourceNameForSubtype,
   subtypeFromSourceName,
 } from './adopt.js';
+import AmcrestPlugin from './index.js';
 
 test('builds a config with main+sub sources and snapshot on main', () => {
   const config = buildCameraConfig({
@@ -139,4 +140,65 @@ test('a name the plugin never minted resolves to no subtype', () => {
   assert.equal(subtypeFromSourceName('extra'), undefined);
   assert.equal(subtypeFromSourceName('extra1x'), undefined);
   assert.equal(subtypeFromSourceName(''), undefined);
+});
+
+/**
+ * A CameraDevice stub that is enough for AmcrestPlugin.startCamera to run: the
+ * controller is built from it, and `initialize()` bails out early on missing
+ * connection settings unless storage supplies them.
+ */
+function fakeCameraDevice(
+  id: string,
+  errors: string[],
+  storage: () => never | Record<string, unknown>,
+): unknown {
+  const noop = (): void => {};
+  return {
+    id,
+    name: id,
+    logger: {
+      log: noop,
+      warn: noop,
+      debug: noop,
+      attention: noop,
+      error: (...parts: unknown[]) => errors.push(`${id}: ${parts.join(' ')}`),
+    },
+    createStorage: () => ({ values: storage(), save: async () => {} }),
+  };
+}
+
+test('configureCameras: one camera that throws does not stop the others', async () => {
+  // A host that refuses something, a device that answers nonsense, bad
+  // credentials — any of these used to reject configureCameras and leave every
+  // later camera unstarted, with nothing naming the culprit. See #67.
+  const errors: string[] = [];
+  const good = (id: string): unknown =>
+    fakeCameraDevice(id, errors, () => ({}));
+  const bad = fakeCameraDevice('exploding', errors, () => {
+    throw new Error('storage blew up');
+  });
+
+  const plugin = Object.create(AmcrestPlugin.prototype) as {
+    configureCameras(cameras: unknown[]): Promise<void>;
+    existing: Map<string, unknown>;
+    cameras: Map<string, unknown>;
+  };
+  plugin.existing = new Map();
+  plugin.cameras = new Map();
+
+  await plugin.configureCameras([good('first'), bad, good('last')]);
+
+  assert.equal(
+    plugin.existing.size,
+    3,
+    'every camera must be recorded, including the one that failed',
+  );
+  assert.ok(
+    errors.some((e) => e.startsWith('exploding: Failed to start this camera')),
+    `the failure must be logged against its own camera, got: ${JSON.stringify(errors)}`,
+  );
+  assert.ok(
+    !errors.some((e) => e.startsWith('last:')),
+    'the camera after the failure must still have been attempted',
+  );
 });
