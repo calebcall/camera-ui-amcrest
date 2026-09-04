@@ -3,6 +3,24 @@ import { buildRtspUrl } from './amcrest/rtsp-url.js';
 import type { AmcrestStream } from './amcrest/encode-config.js';
 import type { CameraConfig } from '@camera.ui/sdk';
 
+/**
+ * Seconds a source may go without media before camera.ui reconnects it.
+ *
+ * Declared per source because that is where the host reads it: it writes the
+ * value out as go2rtc's `#timeout=` flag (`utils/camera.js applySourceUrlFlags`)
+ * and, when the field is unset, strips the flag entirely — so a timeout the
+ * plugin only appended to a URL is not one camera.ui honours. Leaving it unset
+ * hands the decision to go2rtc's own default; the host's 60s default applies to
+ * plugin-served (`cui://`) sources, which these are not.
+ *
+ * 30s is deliberately slack. These are the plugin's own event and relay
+ * connections' neighbours on a device with a small connection pool, and a
+ * substream running at a low frame rate should not be torn down and redialled
+ * over a brief gap. The user can change it per source in camera.ui; the schema
+ * allows 5-120.
+ */
+const STREAM_TIMEOUT_SECONDS = 30;
+
 export interface BuildCameraConfigInput {
   name: string;
   nativeId: string;
@@ -69,6 +87,7 @@ export function buildCameraConfig(input: BuildCameraConfigInput): CameraConfig {
       // ones are pulled on demand by detectors and playback.
       hotMode: index === 0,
       preload: index === 0,
+      timeout: STREAM_TIMEOUT_SECONDS,
     }),
   );
 
