@@ -132,7 +132,26 @@ export default class AmcrestPlugin
   async configureCameras(cameras: CameraDevice[]): Promise<void> {
     for (const camera of cameras) {
       this.existing.set(camera.id, camera);
-      await this.initCamera(camera);
+      await this.startCamera(camera);
+    }
+  }
+
+  /**
+   * Brings one camera up, or gives up on that camera alone.
+   *
+   * Cameras are independent, and a plugin that starts none of them because one
+   * is unreachable, misconfigured or refused by the host is worse than one that
+   * starts the rest. The failure is logged against the camera it belongs to, so
+   * the log names which device to go and look at.
+   */
+  private async startCamera(
+    camera: CameraDevice,
+    initialSettings?: AmcrestInitialSettings,
+  ): Promise<void> {
+    try {
+      await this.initCamera(camera, initialSettings);
+    } catch (error) {
+      camera.logger.error('Failed to start this camera:', error);
     }
   }
 
@@ -141,7 +160,7 @@ export default class AmcrestPlugin
     const initialSettings = camera.nativeId
       ? this.pendingSettings.get(camera.nativeId)
       : undefined;
-    await this.initCamera(camera, initialSettings);
+    await this.startCamera(camera, initialSettings);
     if (camera.nativeId) this.pendingSettings.delete(camera.nativeId);
   }
 

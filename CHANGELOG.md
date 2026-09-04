@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.9.1
+
+Fixes an upgrade that could leave the plugin not starting at all. **If you updated to 1.9.0 and the plugin failed to start, this is the fix** — nothing to reconfigure, and the requirements are unchanged at camera.ui 2.1.10 and Node 24.
+
+- **A sensor camera.ui refuses no longer takes the whole plugin down with it.** 1.9.0 added the Tamper and Problem sensors and declared both in the plugin's contract, but camera.ui validates a new sensor against the contract stored in its own plugin record — and on an in-place update that record still held the previous version's list. It refused `tamper`, the refusal was thrown out of the camera's setup, and because plugin startup awaited each camera in turn, one refused sensor stopped every camera from starting. The plugin logged `cannot provide sensor type "tamper" - not declared in contract.provides` and then nothing. Sensors are now registered independently: one the host will not accept is logged as a warning and skipped, and the camera comes up without it.
+- **One camera failing no longer stops the others.** The same single-file startup meant any camera that threw — bad credentials, a device answering something unparseable, a host refusal — silently prevented every camera after it in the list from starting, with nothing in the log naming which one caused it. Each camera is now brought up independently and a failure is reported against the camera it belongs to.
+- **The camera's control-plane requests have a deadline.** `getSystemInfo` and the PTZ capability probe run during startup and had no timeout, so a camera that accepted a connection and then stalled could hold up the plugin indefinitely. They now give up after 10 seconds, as snapshots already did.
+
+If you are coming from 1.9.0 and the Tamper and Problem sensors do not appear, restart camera.ui once — that is what refreshes its stored copy of the plugin's contract. The plugin will start and work either way; only those two sensors wait on it.
+
 ## 1.9.0
 
 **camera.ui 2.1.10 or newer is now required** (previously `>=2.0.24`). Server 2.1.6 replaced the single detection-zone list with one list per purpose — motion, object, privacy, alert and lines — and 2.1.10 settled that shape by dropping the interim include/exclude filter. This plugin is now built against the SDK that came with it, so on an older server its zones would not work. As in 1.6.0, the floor turns that into a clear message at install time instead of a feature that silently does nothing. Node 24 is unchanged.

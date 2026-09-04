@@ -459,37 +459,59 @@ export class AmcrestCamera {
   }
 
   private async setupSensors(): Promise<void> {
-    this.motion = new AmcrestMotionSensor();
-    await this.cameraDevice.addSensor(this.motion);
-
-    this.object = new AmcrestObjectSensor();
-    await this.cameraDevice.addSensor(this.object);
-
-    this.audio = new AmcrestAudioSensor();
-    await this.cameraDevice.addSensor(this.audio);
+    this.motion = await this.addSensor(new AmcrestMotionSensor());
+    this.object = await this.addSensor(new AmcrestObjectSensor());
+    this.audio = await this.addSensor(new AmcrestAudioSensor());
 
     // Registered unconditionally: whether a camera emits these codes cannot be
     // probed, only observed, and a sensor that stays false is a truthful answer
     // for a device that never reports interference or a fault.
-    this.tamper = new AmcrestTamperSensor();
-    await this.cameraDevice.addSensor(this.tamper);
-
-    this.problem = new AmcrestProblemSensor();
-    await this.cameraDevice.addSensor(this.problem);
+    this.tamper = await this.addSensor(new AmcrestTamperSensor());
+    this.problem = await this.addSensor(new AmcrestProblemSensor());
 
     if (this.capabilities.doorbell) {
-      this.doorbell = new AmcrestDoorbellTrigger();
-      await this.cameraDevice.addSensor(this.doorbell);
+      this.doorbell = await this.addSensor(new AmcrestDoorbellTrigger());
     }
 
     if (this.capabilities.ptz) {
-      this.ptz = new AmcrestPTZSensor(this.client, this.channel);
-      this.ptz.setCapabilities(
+      const ptz = new AmcrestPTZSensor(this.client, this.channel);
+      ptz.setCapabilities(
         this.capabilities.ptzPan,
         this.capabilities.ptzTilt,
         this.capabilities.ptzZoom,
       );
-      await this.cameraDevice.addSensor(this.ptz);
+      this.ptz = await this.addSensor(ptz);
+    }
+  }
+
+  /**
+   * Registers one sensor, or gives up on that sensor alone.
+   *
+   * The host can refuse a sensor for reasons that have nothing to do with the
+   * camera working. An in-place update that adds a sensor type is the one that
+   * bit: camera.ui validates against the contract stored in its plugin record,
+   * and until that record catches up with the newly installed bundle it refuses
+   * the new type outright. Letting that throw escape took down startup for every
+   * camera, because setupSensors runs inside initialize() and configureCameras
+   * awaits each camera in turn.
+   *
+   * A refused sensor is worth a warning and nothing more. Returning undefined
+   * leaves the field unset, and every use site is already optional-chained.
+   */
+  private async addSensor<T extends { name: string }>(
+    sensor: T,
+  ): Promise<T | undefined> {
+    try {
+      await this.cameraDevice.addSensor(
+        sensor as unknown as Parameters<CameraDevice['addSensor']>[0],
+      );
+      return sensor;
+    } catch (error) {
+      this.log.warn(
+        `Sensor '${sensor.name}' was refused by camera.ui, continuing without it:`,
+        error,
+      );
+      return undefined;
     }
   }
 
