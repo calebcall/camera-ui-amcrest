@@ -4,6 +4,7 @@ import { digestFetch } from './digest-auth.js';
 import { parseEncodeConfig } from './encode-config.js';
 import { ptzCommandForVelocity } from './ptz-commands.js';
 import { buildRtspUrl } from './rtsp-url.js';
+import { describeSnapshotRejection } from './snapshot.js';
 import { parseSystemInfo } from './system-info.js';
 
 import type { AmcrestStreamSet } from './encode-config.js';
@@ -16,6 +17,24 @@ export interface AmcrestClientOptions {
   password: string;
   port?: number; // RTSP port
   httpPort?: number; // CGI/HTTP port
+}
+
+/**
+ * How long snapshot.cgi gets before the request is abandoned.
+ *
+ * A camera that accepts the connection and then stalls would otherwise hang the
+ * call forever, and camera.ui coalesces concurrent snapshot requests onto one
+ * inflight promise — so a single stalled fetch takes every event thumbnail
+ * behind it with it. Generous enough for a 5MP JPEG over a slow link.
+ */
+const SNAPSHOT_TIMEOUT_MS = 10_000;
+
+/** Thrown when the camera answers snapshot.cgi with something that is not a picture. */
+export class AmcrestSnapshotError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AmcrestSnapshotError';
+  }
 }
 
 // Thrown when the device rejects the credentials (HTTP 401 after digest auth).
@@ -90,11 +109,26 @@ export class AmcrestClient {
     return parseEncodeConfig(await res.text(), channel);
   }
 
+  /**
+   * A still from the camera, or a throw describing what it sent instead.
+   *
+   * Validating the answer is the point: fetch resolves for 4xx and 5xx, so
+   * returning the body unchecked hands camera.ui an error page as if it were an
+   * image — and camera.ui caches any non-empty body a plugin returns and skips
+   * its own go2rtc fallback. Throwing is what re-enables that fallback.
+   */
   async snapshot(channel: number, signal?: AbortSignal): Promise<Buffer> {
     const res = await this.fetch(`/cgi-bin/snapshot.cgi?channel=${channel}`, {
-      signal,
+      signal: signal ?? AbortSignal.timeout(SNAPSHOT_TIMEOUT_MS),
     });
-    return Buffer.from(await res.arrayBuffer());
+    const body = Buffer.from(await res.arrayBuffer());
+    const rejection = describeSnapshotRejection(
+      res.status,
+      res.statusText,
+      body,
+    );
+    if (rejection) throw new AmcrestSnapshotError(rejection);
+    return body;
   }
 
   async ptz(channel: number, v: PtzVelocity): Promise<void> {

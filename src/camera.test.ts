@@ -1,6 +1,8 @@
+import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { AmcrestSnapshotError } from './amcrest/api.js';
 import { AmcrestCamera } from './camera.js';
 import { compileZones } from './zones/filter.js';
 
@@ -569,4 +571,124 @@ test('getStreamUrl: a secondary source is unaffected by the relay being down', a
     await camera.getStreamUrl('id-extra1'),
     'rtsp://cam/cam/realmonitor?channel=1&subtype=1',
   );
+});
+
+/**
+ * An AmcrestCamera whose client answers snapshot requests from a script, with
+ * the log lines it produced captured by level.
+ *
+ * Each entry is either the bytes to hand back or the error to throw. Only the
+ * client and the logger matter here, so the rest of the device is a stub, and
+ * the private client is set directly rather than by running initialize().
+ */
+function snapshotHarness(answers: (Buffer | Error)[]): {
+  camera: AmcrestCamera;
+  errors: string[];
+  debug: string[];
+} {
+  const errors: string[] = [];
+  const debug: string[] = [];
+  const noop = (): void => {};
+  const device = {
+    name: 'Front Door',
+    logger: {
+      log: noop,
+      warn: noop,
+      attention: noop,
+      error: (...parts: unknown[]) => errors.push(parts.join(' ')),
+      debug: (...parts: unknown[]) => debug.push(parts.join(' ')),
+    },
+    createStorage: () => ({ values: {}, save: async () => {} }),
+  };
+
+  const camera = new AmcrestCamera(device as unknown as CameraDevice);
+  const queue = [...answers];
+  (camera as unknown as { client: { snapshot(): Promise<Buffer> } }).client = {
+    snapshot: async () => {
+      const next = queue.shift();
+      if (next instanceof Error) throw next;
+      return next ?? Buffer.alloc(0);
+    },
+  };
+  return { camera, errors, debug };
+}
+
+test('getSnapshot: a refused snapshot yields undefined so camera.ui can fall back', async () => {
+  // Returning the refusal body instead would be cached by camera.ui and would
+  // suppress its own go2rtc fallback — see #55.
+  const h = snapshotHarness([
+    new AmcrestSnapshotError('Camera refused the snapshot request: HTTP 503'),
+  ]);
+
+  assert.equal(await h.camera.getSnapshot(), undefined);
+  assert.deepEqual(h.errors, ['Camera refused the snapshot request: HTTP 503']);
+});
+
+test('getSnapshot: a transport failure is labelled rather than passed through bare', async () => {
+  const h = snapshotHarness([new Error('connect ECONNREFUSED')]);
+
+  assert.equal(await h.camera.getSnapshot(), undefined);
+  assert.deepEqual(h.errors, ['Snapshot failed: Error: connect ECONNREFUSED']);
+});
+
+test('getSnapshot: an unchanged failure is only shouted about once', async () => {
+  // Snapshots are taken on a timer and again on every event, so an unchanged
+  // failure would otherwise fill the log with one identical line a minute.
+  const same = (): AmcrestSnapshotError =>
+    new AmcrestSnapshotError('Camera refused the snapshot request: HTTP 503');
+  const h = snapshotHarness([same(), same(), same()]);
+
+  await h.camera.getSnapshot();
+  await h.camera.getSnapshot();
+  await h.camera.getSnapshot();
+
+  assert.equal(h.errors.length, 1);
+  assert.equal(h.debug.length, 2);
+});
+
+test('getSnapshot: a different failure earns its own error line', async () => {
+  const h = snapshotHarness([
+    new AmcrestSnapshotError('Camera refused the snapshot request: HTTP 503'),
+    new AmcrestSnapshotError('Camera refused the snapshot request: HTTP 403'),
+  ]);
+
+  await h.camera.getSnapshot();
+  await h.camera.getSnapshot();
+
+  assert.equal(h.errors.length, 2);
+});
+
+test('getSnapshot: a recovery re-arms the error line for the next failure', async () => {
+  const failure = (): AmcrestSnapshotError =>
+    new AmcrestSnapshotError('Camera refused the snapshot request: HTTP 503');
+  const h = snapshotHarness([
+    failure(),
+    Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+    failure(),
+  ]);
+
+  await h.camera.getSnapshot();
+  const picture = await h.camera.getSnapshot();
+  await h.camera.getSnapshot();
+
+  assert.equal(picture?.byteLength, 4);
+  assert.equal(h.errors.length, 2);
+});
+
+test('getSnapshot: with no client configured it returns undefined quietly', async () => {
+  const noop = (): void => {};
+  const device = {
+    name: 'Front Door',
+    logger: {
+      log: noop,
+      warn: noop,
+      error: noop,
+      attention: noop,
+      debug: noop,
+    },
+    createStorage: () => ({ values: {}, save: async () => {} }),
+  };
+  const camera = new AmcrestCamera(device as unknown as CameraDevice);
+
+  assert.equal(await camera.getSnapshot(), undefined);
 });

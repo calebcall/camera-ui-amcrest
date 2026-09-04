@@ -66,21 +66,21 @@ Plain motion carries no coordinates at all, so it is always reported in full. If
 
 camera.ui draws five kinds of zone. This plugin uses two of them:
 
-| Zone list   | Used | What it does here                                                                              |
-| ----------- | ---- | ---------------------------------------------------------------------------------------------- |
-| **Object**  | yes  | An object counts only where an object zone claims its label.                                    |
-| **Privacy** | yes  | An object wholly inside one is dropped, unless the zone is set to keep detections.              |
+| Zone list   | Used | What it does here                                                                                |
+| ----------- | ---- | ------------------------------------------------------------------------------------------------ |
+| **Object**  | yes  | An object counts only where an object zone claims its label.                                     |
+| **Privacy** | yes  | An object wholly inside one is dropped, unless the zone is set to keep detections.               |
 | **Alert**   | no   | Never filters — it decides which detections may raise a push notification. camera.ui applies it. |
 | **Motion**  | no   | Scopes the `motion` label only, and `VideoMotion` carries no coordinates to test.                |
-| **Lines**   | no   | Line crossings arrive as their own camera-side events.                                          |
+| **Lines**   | no   | Line crossings arrive as their own camera-side events.                                           |
 
-Object zones are include gates: every one of them says where something *does* count, never where it doesn't. To keep something out of an area, use a privacy zone.
+Object zones are include gates: every one of them says where something _does_ count, never where it doesn't. To keep something out of an area, use a privacy zone.
 
 ### Filtering by object type
 
 A zone's **labels** decide which detections it applies to, and they also decide which labels are watched at all. Once every object zone names its labels, a label that none of them names is dropped wherever it appears — that is how you express "never alert me about vehicles": draw your object zones and list only `person`.
 
-One object zone with no labels turns that off: it means the zones constrain *where* every label counts, not *which* labels count.
+One object zone with no labels turns that off: it means the zones constrain _where_ every label counts, not _which_ labels count.
 
 ### Choosing intersect or contain
 
@@ -142,6 +142,23 @@ SmartMotionHuman (person) carried no coordinates, so detection zones cannot be a
 ```
 
 That is expected on some firmware. Those events are always reported rather than dropped, so a terse camera never costs you a real detection. Note that this line is only logged when you have zones drawn — with no zones there is nothing for the missing coordinates to cost you, so it is not worth saying.
+
+## Troubleshooting snapshots and event thumbnails
+
+Snapshots come from the camera's own `snapshot.cgi` over HTTP rather than from a decoded RTSP frame, so they do not compete with live view for the device's limited connections. camera.ui asks this plugin for them before it asks go2rtc.
+
+That same picture is what camera.ui uses for the **event thumbnail** on the dashboard. On a camera whose only event is plain `VideoMotion` there is nothing else it can use — no smart detection means no detection segment, so there are no cropped "moment" pictures to fall back on. If `snapshot.cgi` is not answering with a JPEG, motion events end up with no thumbnail at all even though the event itself is recorded and shows on the timeline.
+
+When that happens the plugin says so:
+
+```
+Camera refused the snapshot request: HTTP 503 Service Unavailable — the device is out of spare connections — it is busy serving streams
+Camera answered the snapshot request with 45 bytes that are not a JPEG — Error
+```
+
+The line is logged at error level the first time and at debug while it stays the same, so a camera that has stopped serving snapshots does not fill the log with one identical line a minute. A snapshot that succeeds re-arms it.
+
+In every one of these cases the plugin returns nothing rather than the bad bytes, which lets camera.ui fall back to grabbing a frame through go2rtc. If you see one of these lines, check that snapshots are enabled on the camera and that the account has permission to read them.
 
 ## Troubleshooting events
 
