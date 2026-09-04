@@ -9,29 +9,72 @@ import {
   keepDetection,
 } from './filter.js';
 
-import type { DetectionZone } from '@camera.ui/sdk';
+import type { CompiledZone } from './filter.js';
+
+import type {
+  CameraZones,
+  ObjectZone,
+  Point,
+  PrivacyZone,
+} from '@camera.ui/sdk';
 
 /** A 0.2-0.8 square once compiled. Override any field per test. */
-function zone(overrides: Partial<DetectionZone> = {}): DetectionZone {
+const SQUARE: Point[] = [
+  [20, 20],
+  [80, 20],
+  [80, 80],
+  [20, 80],
+];
+
+function objectZone(overrides: Partial<ObjectZone> = {}): ObjectZone {
   return {
     name: 'Zone',
-    points: [
-      [20, 20],
-      [80, 20],
-      [80, 80],
-      [20, 80],
-    ],
+    points: SQUARE,
     type: 'intersect',
-    filter: 'include',
     labels: [],
-    isPrivacyMask: false,
     color: '#ffffff',
     ...overrides,
   };
 }
 
+function privacyZone(overrides: Partial<PrivacyZone> = {}): PrivacyZone {
+  return {
+    name: 'Mask',
+    points: SQUARE,
+    dropDetections: true,
+    ...overrides,
+  };
+}
+
+/** A `CameraZones` carrying only the lists a test cares about. */
+function cameraZones(parts: Partial<CameraZones> = {}): CameraZones {
+  return {
+    privacyFallback: 'send',
+    motion: [],
+    object: [],
+    privacy: [],
+    alert: [],
+    lines: [],
+    ...parts,
+  };
+}
+
+/**
+ * Compiles a mixed list, sorting each entry into the `CameraZones` bucket it
+ * belongs to. Keeps the matcher tests reading as one zone list, which is how
+ * `keepDetection` sees them.
+ */
+function compile(list: (ObjectZone | PrivacyZone)[]): CompiledZone[] {
+  return compileZones(
+    cameraZones({
+      object: list.filter((z): z is ObjectZone => !('dropDetections' in z)),
+      privacy: list.filter((z): z is PrivacyZone => 'dropDetections' in z),
+    }),
+  );
+}
+
 test('compileZones scales 0-100 percentages into 0-1 space', () => {
-  const [compiled] = compileZones([zone()]);
+  const [compiled] = compile([objectZone()]);
   assert.deepEqual(compiled.polygon, [
     [0.2, 0.2],
     [0.8, 0.2],
@@ -40,21 +83,20 @@ test('compileZones scales 0-100 percentages into 0-1 space', () => {
   ]);
   assert.equal(compiled.name, 'Zone');
   assert.equal(compiled.type, 'intersect');
-  assert.equal(compiled.filter, 'include');
   assert.equal(compiled.isPrivacyMask, false);
   assert.deepEqual([...compiled.labels], []);
 });
 
 test('compileZones drops polygons with fewer than three points', () => {
-  const kept = compileZones([
-    zone({
+  const kept = compile([
+    objectZone({
       name: 'Line',
       points: [
         [0, 0],
         [100, 100],
       ],
     }),
-    zone({ name: 'Real' }),
+    objectZone({ name: 'Real' }),
   ]);
   assert.deepEqual(
     kept.map((z) => z.name),
@@ -63,7 +105,7 @@ test('compileZones drops polygons with fewer than three points', () => {
 });
 
 test('compileZones handles an empty list', () => {
-  assert.deepEqual(compileZones([]), []);
+  assert.deepEqual(compile([]), []);
 });
 
 test('compileZones skips malformed points instead of throwing', () => {
@@ -90,11 +132,11 @@ test('compileZones skips malformed points instead of throwing', () => {
       ],
     },
     { name: 'Null', points: [null, [20, 20], [30, 30]] },
-  ] as unknown as Partial<DetectionZone>[];
+  ] as unknown as Partial<ObjectZone>[];
 
-  const kept = compileZones([
-    ...malformed.map((m) => zone(m)),
-    zone({ name: 'Real' }),
+  const kept = compile([
+    ...malformed.map((m) => objectZone(m)),
+    objectZone({ name: 'Real' }),
   ]);
   assert.deepEqual(
     kept.map((z) => z.name),
@@ -103,7 +145,7 @@ test('compileZones skips malformed points instead of throwing', () => {
 });
 
 test('compileZones carries labels into a Set', () => {
-  const [compiled] = compileZones([zone({ labels: ['person', 'vehicle'] })]);
+  const [compiled] = compile([objectZone({ labels: ['person', 'vehicle'] })]);
   assert.equal(compiled.labels.has('person'), true);
   assert.equal(compiled.labels.has('vehicle'), true);
   assert.equal(compiled.labels.has('animal'), false);
@@ -117,102 +159,55 @@ test('keepDetection: no zones keeps everything', () => {
   assert.equal(keepDetection(OUTSIDE, 'person', []).keep, true);
 });
 
-test('keepDetection: the four type x filter combinations', () => {
+test('keepDetection: intersect and contain, the two matches an object zone has', () => {
+  // `filter` is gone from the SDK's zone model: every object zone is an include
+  // gate, and the exclude role belongs to privacy zones.
   const cases: {
     type: 'intersect' | 'contain';
-    filter: 'include' | 'exclude';
     box: typeof INSIDE;
     expected: boolean;
     label: string;
   }[] = [
     {
       type: 'intersect',
-      filter: 'include',
       box: INSIDE,
       expected: true,
-      label: 'include/intersect wholly inside',
+      label: 'intersect wholly inside',
     },
     {
       type: 'intersect',
-      filter: 'include',
       box: PARTIAL,
       expected: true,
-      label: 'include/intersect overlapping',
+      label: 'intersect overlapping',
     },
     {
       type: 'intersect',
-      filter: 'include',
       box: OUTSIDE,
       expected: false,
-      label: 'include/intersect outside',
+      label: 'intersect outside',
     },
     {
       type: 'contain',
-      filter: 'include',
       box: INSIDE,
       expected: true,
-      label: 'include/contain wholly inside',
+      label: 'contain wholly inside',
     },
     {
       type: 'contain',
-      filter: 'include',
       box: PARTIAL,
       expected: false,
-      label: 'include/contain only overlapping',
+      label: 'contain only overlapping',
     },
     {
       type: 'contain',
-      filter: 'include',
       box: OUTSIDE,
       expected: false,
-      label: 'include/contain outside',
-    },
-    {
-      type: 'intersect',
-      filter: 'exclude',
-      box: INSIDE,
-      expected: false,
-      label: 'exclude/intersect wholly inside',
-    },
-    {
-      type: 'intersect',
-      filter: 'exclude',
-      box: PARTIAL,
-      expected: false,
-      label: 'exclude/intersect overlapping',
-    },
-    {
-      type: 'intersect',
-      filter: 'exclude',
-      box: OUTSIDE,
-      expected: true,
-      label: 'exclude/intersect outside',
-    },
-    {
-      type: 'contain',
-      filter: 'exclude',
-      box: INSIDE,
-      expected: false,
-      label: 'exclude/contain wholly inside',
-    },
-    {
-      type: 'contain',
-      filter: 'exclude',
-      box: PARTIAL,
-      expected: true,
-      label: 'exclude/contain only overlapping',
-    },
-    {
-      type: 'contain',
-      filter: 'exclude',
-      box: OUTSIDE,
-      expected: true,
-      label: 'exclude/contain outside',
+      label: 'contain outside',
     },
   ];
 
   for (const c of cases) {
-    const zones = compileZones([zone({ type: c.type, filter: c.filter })]);
+    const zones = compile([objectZone({ type: c.type })]);
     assert.equal(
       keepDetection(c.box, 'person', zones).keep,
       c.expected,
@@ -222,10 +217,10 @@ test('keepDetection: the four type x filter combinations', () => {
 });
 
 test('keepDetection: a label no zone mentions is dropped once any zone exists', () => {
-  const zones = compileZones([zone({ labels: ['vehicle'] })]);
+  const zones = compile([objectZone({ labels: ['vehicle'] })]);
   // Not the intuitive reading, but it is what camera.ui's rust filter does, and
   // the two have to agree — the core filters its frame pipeline while this
-  // filters the camera's own events, from the same zone config. Drawing any
+  // reports on the camera's own events, from the same zone config. Drawing any
   // gating zone puts the camera in allow-listed mode, so 'person' appearing in
   // no zone's label list means "not wanted", not "unconstrained".
   const person = keepDetection(OUTSIDE, 'person', zones);
@@ -238,24 +233,46 @@ test('keepDetection: a label no zone mentions is dropped once any zone exists', 
   assert.equal(keepDetection(OUTSIDE, 'vehicle', zones).keep, false);
 });
 
+test('keepDetection: a label another zone claims is judged only by that zone', () => {
+  // Position only matters inside the zones that claim your label. 'Kerb' keeps
+  // vehicles out of allow-listed exile and is the only polygon they are
+  // measured against; 'Path' is the only one people are measured against.
+  const zones = compile([
+    objectZone({ name: 'Path', labels: ['person'] }),
+    objectZone({
+      name: 'Kerb',
+      labels: ['vehicle'],
+      points: [
+        [85, 85],
+        [100, 85],
+        [100, 100],
+        [85, 100],
+      ],
+    }),
+  ]);
+  assert.equal(keepDetection(OUTSIDE, 'vehicle', zones).keep, true);
+  assert.equal(keepDetection(OUTSIDE, 'person', zones).keep, false);
+});
+
 test('keepDetection: privacy masks alone do not put the camera in allow-listed mode', () => {
   // A mask is a redaction, not a gate. A camera carrying only masks still keeps
   // labels none of them mention, matching the core.
-  const zones = compileZones([
-    zone({ name: 'Road', isPrivacyMask: true, labels: ['vehicle'] }),
-  ]);
+  // PrivacyZone has no labels in the SDK's model — it hides an area, not a
+  // category — so scoping it to 'vehicle' is not expressible any more; what
+  // matters is that a mask alone does not gate anything.
+  const zones = compile([privacyZone({ name: 'Road' })]);
   assert.equal(keepDetection(OUTSIDE, 'person', zones).keep, true);
 });
 
 test('keepDetection: empty labels applies the zone to every label', () => {
-  const zones = compileZones([zone({ labels: [] })]);
+  const zones = compile([objectZone({ labels: [] })]);
   assert.equal(keepDetection(OUTSIDE, 'person', zones).keep, false);
   assert.equal(keepDetection(OUTSIDE, 'vehicle', zones).keep, false);
 });
 
 test('keepDetection: a privacy mask drops a detection an include zone would have kept', () => {
-  const zones = compileZones([
-    zone({
+  const zones = compile([
+    objectZone({
       name: 'Everything',
       points: [
         [0, 0],
@@ -264,7 +281,7 @@ test('keepDetection: a privacy mask drops a detection an include zone would have
         [0, 100],
       ],
     }),
-    zone({ name: 'Bins', isPrivacyMask: true }),
+    privacyZone({ name: 'Bins' }),
   ]);
   const verdict = keepDetection(INSIDE, 'person', zones);
   assert.equal(verdict.keep, false);
@@ -274,13 +291,20 @@ test('keepDetection: a privacy mask drops a detection an include zone would have
   );
 });
 
-test('keepDetection: a privacy mask only masks the labels it is scoped to', () => {
-  // labels scopes all of a zone's behaviour, privacy masks included. A mask set
-  // to 'vehicle' is a vehicle mask; it must not silently hide people too.
-  const zones = compileZones([
-    zone({ name: 'Road', isPrivacyMask: true, labels: ['vehicle'] }),
-  ]);
+test('keepDetection: a privacy zone masks every label', () => {
+  // PrivacyZone has no labels in the SDK's model — it hides an area, not a
+  // category — so it applies to whatever is standing in it.
+  const zones = compile([privacyZone({ name: 'Road' })]);
   assert.equal(keepDetection(INSIDE, 'vehicle', zones).keep, false);
+  assert.equal(keepDetection(INSIDE, 'person', zones).keep, false);
+});
+
+test('keepDetection: a privacy zone that keeps detections does not filter', () => {
+  // `dropDetections: false` means "hide the picture, keep watching". Filtering
+  // on it would blind the detector in an area the user only wanted obscured.
+  const zones = compile([
+    privacyZone({ name: 'Neighbour', dropDetections: false }),
+  ]);
   assert.equal(keepDetection(INSIDE, 'person', zones).keep, true);
 });
 
@@ -289,7 +313,7 @@ test('keepDetection: a privacy mask only masks the labels it is scoped to', () =
 // compiles to exactly 1.0 too. Both of the following used to fail open.
 const BOTTOM_CLIPPED = { x: 0.3, y: 0.55, width: 0.4, height: 0.45 };
 const RIGHT_CLIPPED = { x: 0.6, y: 0.2, width: 0.4, height: 0.3 };
-const FULL_FRAME_POINTS: DetectionZone['points'] = [
+const FULL_FRAME_POINTS: Point[] = [
   [0, 0],
   [100, 0],
   [100, 100],
@@ -297,43 +321,55 @@ const FULL_FRAME_POINTS: DetectionZone['points'] = [
 ];
 
 test('keepDetection: a full-frame privacy mask masks an object clipped at the frame edge', () => {
-  const zones = compileZones([
-    zone({
+  const zones = compile([
+    privacyZone({
       name: 'Everything',
       points: FULL_FRAME_POINTS,
-      isPrivacyMask: true,
     }),
   ]);
   assert.equal(keepDetection(BOTTOM_CLIPPED, 'person', zones).keep, false);
   assert.equal(keepDetection(RIGHT_CLIPPED, 'person', zones).keep, false);
 });
 
-test('keepDetection: a full-frame contain/exclude zone drops an object clipped at the frame edge', () => {
-  // The README's own recipe for "never alert me about vehicles", combined with
-  // its own recommendation to pair exclude with contain.
-  const zones = compileZones([
-    zone({
-      name: 'No vehicles',
-      points: FULL_FRAME_POINTS,
-      type: 'contain',
-      filter: 'exclude',
-      labels: ['vehicle'],
-    }),
-  ]);
-  assert.equal(keepDetection(BOTTOM_CLIPPED, 'vehicle', zones).keep, false);
-  assert.equal(keepDetection(RIGHT_CLIPPED, 'vehicle', zones).keep, false);
+test('keepDetection: allow-listed mode drops the label wherever it stands', () => {
+  // Position is not the question: the box is inside the zone's polygon and is
+  // still dropped, because no zone lists 'vehicle'. This is what replaced the
+  // old exclude filter for "never alert me about vehicles" — list only the
+  // labels you want on your object zones.
+  const zones = compile([objectZone({ name: 'Path', labels: ['person'] })]);
+  const verdict = keepDetection(INSIDE, 'vehicle', zones);
+  assert.equal(verdict.keep, false);
+  assert.equal(
+    verdict.keep === false && verdict.reason,
+    "box [0.40,0.40,0.10,0.10] is a 'vehicle' and no zone lists that label",
+  );
+  assert.equal(keepDetection(INSIDE, 'person', zones).keep, true);
 });
 
-test('keepDetection: a full-frame contain/include zone keeps a near-field object', () => {
-  const zones = compileZones([
-    zone({ name: 'Everything', points: FULL_FRAME_POINTS, type: 'contain' }),
+test('keepDetection: one object zone listing no labels turns allow-listed mode off', () => {
+  // A zone with no labels claims every label, so every label has a gate and
+  // none is exiled — it constrains *where* things count, not *which*.
+  const zones = compile([
+    objectZone({ name: 'Path', labels: ['person'] }),
+    objectZone({ name: 'Everything', points: FULL_FRAME_POINTS, labels: [] }),
+  ]);
+  assert.equal(keepDetection(INSIDE, 'vehicle', zones).keep, true);
+});
+
+test('keepDetection: a full-frame contain zone keeps a near-field object', () => {
+  const zones = compile([
+    objectZone({
+      name: 'Everything',
+      points: FULL_FRAME_POINTS,
+      type: 'contain',
+    }),
   ]);
   assert.equal(keepDetection(BOTTOM_CLIPPED, 'person', zones).keep, true);
 });
 
-test('keepDetection: matching any one of several include zones is enough', () => {
-  const zones = compileZones([
-    zone({
+test('keepDetection: matching any one of several object zones is enough', () => {
+  const zones = compile([
+    objectZone({
       name: 'Corner',
       points: [
         [0, 0],
@@ -342,26 +378,15 @@ test('keepDetection: matching any one of several include zones is enough', () =>
         [0, 10],
       ],
     }),
-    zone({ name: 'Driveway' }),
+    objectZone({ name: 'Driveway' }),
   ]);
   assert.equal(keepDetection(INSIDE, 'person', zones).keep, true);
 });
 
-test('keepDetection: with only exclude zones, not being excluded is enough', () => {
-  const zones = compileZones([zone({ name: 'Street', filter: 'exclude' })]);
-  assert.equal(keepDetection(OUTSIDE, 'person', zones).keep, true);
-  const verdict = keepDetection(INSIDE, 'person', zones);
-  assert.equal(verdict.keep, false);
-  assert.equal(
-    verdict.keep === false && verdict.reason,
-    "box [0.40,0.40,0.10,0.10] inside exclude zone 'Street'",
-  );
-});
-
-test('keepDetection: failing every include zone names them all', () => {
-  const zones = compileZones([
-    zone({ name: 'Driveway' }),
-    zone({
+test('keepDetection: failing every object zone names them all', () => {
+  const zones = compile([
+    objectZone({ name: 'Driveway' }),
+    objectZone({
       name: 'Porch',
       points: [
         [0, 0],
@@ -375,14 +400,14 @@ test('keepDetection: failing every include zone names them all', () => {
   assert.equal(verdict.keep, false);
   assert.equal(
     verdict.keep === false && verdict.reason,
-    "box [0.90,0.90,0.05,0.05] outside include zone(s) 'Driveway', 'Porch'",
+    "box [0.90,0.90,0.05,0.05] outside object zone(s) 'Driveway', 'Porch'",
   );
 });
 
 test('keepDetection: the reason names the box that was tested', () => {
   // The box is what makes a suppression diagnosable — "outside 'Driveway'" on
   // its own cannot tell you whether the zone or the coordinates are wrong.
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   const verdict = keepDetection(
     { x: 0.7100000000000001, y: 0.9, width: 0.09, height: 0.21 },
     'person',
@@ -390,14 +415,14 @@ test('keepDetection: the reason names the box that was tested', () => {
   );
   assert.equal(
     verdict.keep === false && verdict.reason,
-    "box [0.71,0.90,0.09,0.21] outside include zone(s) 'Driveway'",
+    "box [0.71,0.90,0.09,0.21] outside object zone(s) 'Driveway'",
   );
 });
 
 test('decideObjectEvent: a deactivation is never filtered, however badly it fails the zones', () => {
   // Load-bearing. Stop payloads carry no boxes of their own, and suppressing a
   // Stop would leave the object sensor latched active forever.
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   const decision = decideObjectEvent(
     {
       kind: 'object',
@@ -413,7 +438,7 @@ test('decideObjectEvent: a deactivation is never filtered, however badly it fail
 });
 
 test('decideObjectEvent: an activation with no coordinates fails open', () => {
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   const decision = decideObjectEvent(
     { kind: 'object', category: 'person', active: true },
     zones,
@@ -429,7 +454,7 @@ test('decideObjectEvent: an activation whose only box has no area fails open', (
   // Some firmware sends a placeholder Rect of [0,0,0,0]. A zero-area box fails
   // every include zone, so filtering it would suppress a real detection on the
   // strength of a terse payload — the exact thing the fail-open rule forbids.
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   const decision = decideObjectEvent(
     {
       kind: 'object',
@@ -448,7 +473,7 @@ test('decideObjectEvent: an activation whose only box has no area fails open', (
 });
 
 test('decideObjectEvent: a real box alongside a degenerate one is still filtered', () => {
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   const decision = decideObjectEvent(
     {
       kind: 'object',
@@ -469,7 +494,7 @@ test('decideObjectEvent: a real box alongside a degenerate one is still filtered
 });
 
 // A mask with a narrow off-centre slot cut out of it, in 0-100 percentages.
-const NOTCHED_MASK_POINTS: DetectionZone['points'] = [
+const NOTCHED_MASK_POINTS: Point[] = [
   [0, 0],
   [100, 0],
   [100, 100],
@@ -485,10 +510,9 @@ test("keepDetection: a zero-area box crossing a mask's slot is not inside the ma
   // detection has coordinates, so one collapsed Rect next to a real one reaches
   // the mask test on its own. This box spans the mask's slot, which is not
   // masked ground, so the mask must not claim it.
-  const zones = compileZones([
-    zone({
+  const zones = compile([
+    privacyZone({
       name: 'Mask',
-      isPrivacyMask: true,
       points: NOTCHED_MASK_POINTS,
     }),
   ]);
@@ -501,10 +525,9 @@ test("keepDetection: a zero-area box crossing a mask's slot is not inside the ma
 test('keepDetection: a zero-area box wholly inside a mask is still masked', () => {
   // The other half of the same behaviour: collapsing an axis must not become a
   // way to walk through a privacy mask.
-  const zones = compileZones([
-    zone({
+  const zones = compile([
+    privacyZone({
       name: 'Mask',
-      isPrivacyMask: true,
       points: NOTCHED_MASK_POINTS,
     }),
   ]);
@@ -518,7 +541,7 @@ test('keepDetection: a zero-area box wholly inside a mask is still masked', () =
 });
 
 test('decideObjectEvent: reports only the detections that survive', () => {
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   const decision = decideObjectEvent(
     {
       kind: 'object',
@@ -540,7 +563,7 @@ test('decideObjectEvent: reports only the detections that survive', () => {
 });
 
 test('decideObjectEvent: suppresses when nothing survives', () => {
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   const decision = decideObjectEvent(
     {
       kind: 'object',
@@ -552,12 +575,12 @@ test('decideObjectEvent: suppresses when nothing survives', () => {
   );
   assert.equal(decision.kind, 'suppress');
   assert.deepEqual(decision.kind === 'suppress' && decision.reasons, [
-    "box [0.90,0.90,0.05,0.05] outside include zone(s) 'Driveway'",
+    "box [0.90,0.90,0.05,0.05] outside object zone(s) 'Driveway'",
   ]);
 });
 
 test('decideObjectEvent: momentary events are filtered the same way', () => {
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   const decision = decideObjectEvent(
     {
       kind: 'object',
@@ -590,8 +613,8 @@ test('keepDetection: a contain zone whose notch opens on the frame edge does not
   // End-to-end guard for the frame-edge notch regression. Without it, a
   // contain+include zone accepts an object largely outside it, and the
   // exclude/privacy-mask form drops a detection it should have kept.
-  const zones = compileZones([
-    zone({
+  const zones = compile([
+    objectZone({
       name: 'Yard',
       type: 'contain',
       points: [
@@ -618,7 +641,7 @@ test('decideObjectEvent: a reversed box is filtered, not treated as coordinate-f
   // classify.ts does not enforce x2 > x1, and geometry.ts normalizes reversed
   // extents. So a reversed box carries real coordinates and must go through the
   // zone test rather than taking the fail-open path meant for empty payloads.
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   const decision = decideObjectEvent(
     {
       kind: 'object',
@@ -633,7 +656,7 @@ test('decideObjectEvent: a reversed box is filtered, not treated as coordinate-f
 });
 
 test('findKeptDetection returns the first detection the zones keep', () => {
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   const kept = findKeptDetection(
     [{ box: OUTSIDE }, { box: INSIDE, trackId: 9 }],
     'person',
@@ -643,7 +666,7 @@ test('findKeptDetection returns the first detection the zones keep', () => {
 });
 
 test('findKeptDetection returns undefined when the zones keep none', () => {
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   assert.equal(
     findKeptDetection([{ box: OUTSIDE }], 'person', zones),
     undefined,
@@ -657,7 +680,7 @@ test('findKeptDetection keeps the first detection when there are no zones', () =
 });
 
 test('findKeptDetection returns undefined for an empty detection list', () => {
-  const zones = compileZones([zone({ name: 'Driveway' })]);
+  const zones = compile([objectZone({ name: 'Driveway' })]);
   assert.equal(findKeptDetection([], 'person', zones), undefined);
 });
 
