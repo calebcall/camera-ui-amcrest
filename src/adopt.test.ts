@@ -110,6 +110,12 @@ test('builds a source per stream when the camera serves three', () => {
     config.sources.map((s) => s.hotMode),
     [true, false, false],
   );
+  // Declared per source, because that is the only place camera.ui reads it —
+  // a timeout appended to a URL is stripped when the field is unset.
+  assert.deepEqual(
+    config.sources.map((s) => s.timeout),
+    [30, 30, 30],
+  );
   assert.deepEqual(
     config.sources.map((s) => s.name),
     ['main', 'extra2', 'extra1'],
