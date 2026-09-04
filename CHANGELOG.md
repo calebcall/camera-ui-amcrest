@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.9.0
+
+**camera.ui 2.1.10 or newer is now required** (previously `>=2.0.24`). Server 2.1.6 replaced the single detection-zone list with one list per purpose — motion, object, privacy, alert and lines — and 2.1.10 settled that shape by dropping the interim include/exclude filter. This plugin is now built against the SDK that came with it, so on an older server its zones would not work. As in 1.6.0, the floor turns that into a clear message at install time instead of a feature that silently does nothing. Node 24 is unchanged.
+
+**If you have detection zones drawn, read the zones section below before upgrading** — camera.ui's zone model changed, and one thing you may have configured no longer exists.
+
+### Detection zones
+
+- **`exclude` zones are gone — camera.ui removed them.** Object zones are now include-only. If you had an exclude zone, camera.ui's own 2.1.x upgrade migrated it for you; the two replacements are privacy zones, for "ignore anything in this area", and object-zone labels, for "ignore this type". Drawing any object zone still puts the camera into allow-listed mode exactly as 1.8.0 described, so "never alert me about vehicles" is now expressed by listing only `person` on your object zones. The README's zone section has been rewritten around the new model.
+- **Zone filtering is camera.ui's job now, not the plugin's.** 1.8.0 fixed the plugin's copy of the rule to agree with camera.ui's own; this release retires the copy. camera.ui already applies your zones to everything a camera-side plugin reports, and it does so with a better bounding box than the one the camera sends — tracked across the event, and refined by object assist where you have it. The plugin was applying the same zones first, on the single coarse position the camera reports at first sight, and anything it dropped never reached the server at all. That cost more than a duplicate check: a dropped detection was invisible to PTZ autotracking's presence tracking and to camera.ui's own object assist, both of which run before the server filters. **Your zones behave the same or better, and there is nothing to reconfigure** — including the allow-listed rule, which camera.ui applies itself.
+- **The zone logging stays, and is now phrased as an observation.** camera.ui's filtering is silent, so the debug lines that tell you a zone is working are still worth having — they now describe what your zones make of a detection rather than what the plugin did about it. `suppressed by detection zones` becomes `is outside the detection zones`, and the walk-in and pass-through lines are reworded to match. Because the server judges a better box, its verdict and the log line can occasionally differ; the log always describes the box as it arrived from the camera.
+
+### Event thumbnails
+
+- **Motion events get their thumbnail back on cameras without smart detection.** On a camera whose only event is plain motion, camera.ui has no cropped object shots to build an event card from, so the dashboard thumbnail is the plugin's own snapshot and nothing else can stand in for it. The plugin returned whatever `snapshot.cgi` sent without checking it — and since a refusal still counts as a completed request, a camera answering "503, no spare connections" or serving a plain-text error page handed those bytes to camera.ui as if they were a picture. camera.ui caches what a plugin gives it and stops looking, so the bad bytes also suppressed its own fallback. The result was motion events that recorded and appeared on the timeline with no thumbnail, and an empty log. Snapshots are now checked — the status, and that the body really is a JPEG — and a bad answer is refused so camera.ui falls back to grabbing a frame itself.
+- **A camera that stops serving snapshots now says so.** The failure is logged with the status, whatever the device explained, and what that status usually means. It is logged loudly the first time and quietly while it stays the same, because snapshots are taken on a timer *and* on every event — an unchanged failure would otherwise be one identical line a minute.
+- **Snapshot requests time out.** They had no deadline, and camera.ui queues concurrent snapshot requests behind one in-flight call, so a camera that accepted the connection and then stalled took every later event thumbnail down with it.
+
+### New sensors
+
+- **Tamper and fault state.** The camera's own reports that its view has been interfered with — lens covered, scene changed, defocused — now raise a **Tamper** sensor, and its reports that the device is unwell — video signal lost, storage missing, failing or nearly full — raise a **Problem** sensor. Both appear on every camera: whether a device sends these codes cannot be asked, only observed, so a sensor sitting at false is a truthful answer rather than a missing one. Both work as cascade triggers, so a tamper can start a detection event.
+- These codes come from the published Dahua CGI event list rather than from a capture on real hardware, and firmware varies. If one behaves differently on your camera, `npm run watch-events` now prints these events with their state so a report can settle it.
+
+### Also
+
+- Streams now carry their reconnect timeout as a proper source setting, editable per source in camera.ui. The plugin had been expressing it as a URL fragment, which camera.ui strips when the setting is unset — so the 30 seconds it thought it was asking for was governing nothing, and go2rtc's own default applied instead.
+- Build tooling moved to `@camera.ui/sdk` 1.2.35 and `@camera.ui/cli` 0.0.103.
+
+### Known issue
+
+Two-way audio may not work at all on any device, not only the Dahua-branded doorbells already flagged. Tracing the server showed that camera.ui only routes streaming through a plugin when the plugin registers a source with no URL of its own — and this plugin registers direct RTSP URLs, so its relay, and the audio backchannel that rides on it, is never connected to. That is a reading of the code rather than a confirmed reproduction, and fixing it changes how every viewer's live stream is routed, so it is being handled separately. See [#61](https://github.com/calebcall/camera-ui-amcrest/issues/61).
+
 ## 1.8.0
 
 Detection zones now behave exactly as they do in camera.ui itself. One rule differed, and it was the non-obvious one.
