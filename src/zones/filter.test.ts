@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import {
   compileZones,
-  decideObjectEvent,
+  reviewObjectEvent,
   findKeptDetection,
   hasUsableCoordinates,
   keepDetection,
@@ -378,7 +378,7 @@ test('keepDetection: failing every object zone names them all', () => {
 });
 
 test('keepDetection: the reason names the box that was tested', () => {
-  // The box is what makes a suppression diagnosable — "outside 'Driveway'" on
+  // The box is what makes a rejection diagnosable — "outside 'Driveway'" on
   // its own cannot tell you whether the zone or the coordinates are wrong.
   const zones = compile([objectZone({ name: 'Driveway' })]);
   const verdict = keepDetection(
@@ -392,11 +392,12 @@ test('keepDetection: the reason names the box that was tested', () => {
   );
 });
 
-test('decideObjectEvent: a deactivation is never filtered, however badly it fails the zones', () => {
-  // Load-bearing. Stop payloads carry no boxes of their own, and suppressing a
-  // Stop would leave the object sensor latched active forever.
+test('reviewObjectEvent: a deactivation is reported as such, never judged', () => {
+  // A Stop's boxes describe where the object left, not where it was seen, so
+  // the zones have no claim on them. The detections still come back: the
+  // walk-in review in camera.ts is the one thing that reads a Stop's position.
   const zones = compile([objectZone({ name: 'Driveway' })]);
-  const decision = decideObjectEvent(
+  const review = reviewObjectEvent(
     {
       kind: 'object',
       category: 'person',
@@ -405,30 +406,38 @@ test('decideObjectEvent: a deactivation is never filtered, however badly it fail
     },
     zones,
   );
-  assert.equal(decision.kind, 'skipped');
-  assert.equal(decision.kind === 'skipped' && decision.reason, 'deactivation');
-  assert.equal(decision.kind === 'skipped' && decision.detections.length, 1);
+  assert.equal(review.kind, 'deactivation');
+  assert.equal(review.kind === 'deactivation' && review.detections.length, 1);
 });
 
-test('decideObjectEvent: an activation with no coordinates fails open', () => {
+test('reviewObjectEvent: with no zones drawn there is nothing to say', () => {
+  const review = reviewObjectEvent(
+    {
+      kind: 'object',
+      category: 'vehicle',
+      active: true,
+      detections: [{ box: OUTSIDE }],
+    },
+    [],
+  );
+  assert.deepEqual(review, { kind: 'no-zones' });
+});
+
+test('reviewObjectEvent: an activation with no coordinates cannot be judged', () => {
   const zones = compile([objectZone({ name: 'Driveway' })]);
-  const decision = decideObjectEvent(
+  const review = reviewObjectEvent(
     { kind: 'object', category: 'person', active: true },
     zones,
   );
-  assert.equal(decision.kind, 'skipped');
-  assert.equal(
-    decision.kind === 'skipped' && decision.reason,
-    'no-coordinates',
-  );
+  assert.equal(review.kind, 'no-coordinates');
 });
 
-test('decideObjectEvent: an activation whose only box has no area fails open', () => {
+test('reviewObjectEvent: an activation whose only box has no area cannot be judged', () => {
   // Some firmware sends a placeholder Rect of [0,0,0,0]. A zero-area box fails
-  // every include zone, so filtering it would suppress a real detection on the
-  // strength of a terse payload — the exact thing the fail-open rule forbids.
+  // every zone, so calling it "outside" would put a claim in the log that the
+  // payload does not support.
   const zones = compile([objectZone({ name: 'Driveway' })]);
-  const decision = decideObjectEvent(
+  const review = reviewObjectEvent(
     {
       kind: 'object',
       category: 'person',
@@ -437,17 +446,13 @@ test('decideObjectEvent: an activation whose only box has no area fails open', (
     },
     zones,
   );
-  assert.equal(decision.kind, 'skipped');
-  assert.equal(
-    decision.kind === 'skipped' && decision.reason,
-    'no-coordinates',
-  );
-  assert.equal(decision.kind === 'skipped' && decision.detections.length, 1);
+  assert.equal(review.kind, 'no-coordinates');
+  assert.equal(review.kind === 'no-coordinates' && review.detections.length, 1);
 });
 
-test('decideObjectEvent: a real box alongside a degenerate one is still filtered', () => {
+test('reviewObjectEvent: a real box alongside a degenerate one is still judged', () => {
   const zones = compile([objectZone({ name: 'Driveway' })]);
-  const decision = decideObjectEvent(
+  const review = reviewObjectEvent(
     {
       kind: 'object',
       category: 'person',
@@ -459,9 +464,9 @@ test('decideObjectEvent: a real box alongside a degenerate one is still filtered
     },
     zones,
   );
-  assert.equal(decision.kind, 'report');
+  assert.equal(review.kind, 'partial');
   assert.deepEqual(
-    decision.kind === 'report' && decision.detections.map((d) => d.trackId),
+    review.kind === 'partial' && review.kept.map((d) => d.trackId),
     [2],
   );
 });
@@ -479,7 +484,7 @@ const NOTCHED_MASK_POINTS: Point[] = [
 ];
 
 test("keepDetection: a zero-area box crossing a mask's slot is not inside the mask", () => {
-  // The mixed-payload path: `decideObjectEvent` only fails open when *no*
+  // The mixed-payload path: `reviewObjectEvent` only excuses an event when *no*
   // detection has coordinates, so one collapsed Rect next to a real one reaches
   // the mask test on its own. This box spans the mask's slot, which is not
   // masked ground, so the mask must not claim it.
@@ -513,9 +518,9 @@ test('keepDetection: a zero-area box wholly inside a mask is still masked', () =
   assert.match(verdict.reason ?? '', /inside privacy mask 'Mask'/);
 });
 
-test('decideObjectEvent: reports only the detections that survive', () => {
+test('reviewObjectEvent: partial names what is inside and what is not', () => {
   const zones = compile([objectZone({ name: 'Driveway' })]);
-  const decision = decideObjectEvent(
+  const review = reviewObjectEvent(
     {
       kind: 'object',
       category: 'person',
@@ -527,17 +532,17 @@ test('decideObjectEvent: reports only the detections that survive', () => {
     },
     zones,
   );
-  assert.equal(decision.kind, 'report');
+  assert.equal(review.kind, 'partial');
   assert.deepEqual(
-    decision.kind === 'report' && decision.detections.map((d) => d.trackId),
+    review.kind === 'partial' && review.kept.map((d) => d.trackId),
     [1],
   );
-  assert.equal(decision.kind === 'report' && decision.dropped.length, 1);
+  assert.equal(review.kind === 'partial' && review.dropped.length, 1);
 });
 
-test('decideObjectEvent: suppresses when nothing survives', () => {
+test('reviewObjectEvent: fail when nothing is inside, with the reasons', () => {
   const zones = compile([objectZone({ name: 'Driveway' })]);
-  const decision = decideObjectEvent(
+  const review = reviewObjectEvent(
     {
       kind: 'object',
       category: 'person',
@@ -546,15 +551,15 @@ test('decideObjectEvent: suppresses when nothing survives', () => {
     },
     zones,
   );
-  assert.equal(decision.kind, 'suppress');
-  assert.deepEqual(decision.kind === 'suppress' && decision.reasons, [
+  assert.equal(review.kind, 'fail');
+  assert.deepEqual(review.kind === 'fail' && review.reasons, [
     "box [0.90,0.90,0.05,0.05] outside object zone(s) 'Driveway'",
   ]);
 });
 
-test('decideObjectEvent: momentary events are filtered the same way', () => {
+test('reviewObjectEvent: momentary events are judged the same way', () => {
   const zones = compile([objectZone({ name: 'Driveway' })]);
-  const decision = decideObjectEvent(
+  const review = reviewObjectEvent(
     {
       kind: 'object',
       category: 'person',
@@ -564,22 +569,25 @@ test('decideObjectEvent: momentary events are filtered the same way', () => {
     },
     zones,
   );
-  assert.equal(decision.kind, 'suppress');
+  assert.equal(review.kind, 'fail');
 });
 
-test('decideObjectEvent: with no zones, every activation reports unchanged', () => {
-  const decision = decideObjectEvent(
+test('reviewObjectEvent: a reversed box is judged, not called coordinate-free', () => {
+  // classify.ts does not enforce x2 > x1, and geometry.ts normalizes reversed
+  // extents. So a reversed box carries a real position and must be measured
+  // rather than excused.
+  const zones = compile([objectZone({ name: 'Driveway' })]);
+  const review = reviewObjectEvent(
     {
       kind: 'object',
-      category: 'vehicle',
+      category: 'person',
       active: true,
-      detections: [{ box: OUTSIDE }],
+      // The OUTSIDE box, expressed back-to-front.
+      detections: [{ box: { x: 0.95, y: 0.95, width: -0.05, height: -0.05 } }],
     },
-    [],
+    zones,
   );
-  assert.equal(decision.kind, 'report');
-  assert.equal(decision.kind === 'report' && decision.detections.length, 1);
-  assert.equal(decision.kind === 'report' && decision.dropped.length, 0);
+  assert.equal(review.kind, 'fail');
 });
 
 test('keepDetection: a contain zone whose notch opens on the frame edge does not contain a clipped box spanning it', () => {
@@ -608,24 +616,6 @@ test('keepDetection: a contain zone whose notch opens on the frame edge does not
     zones,
   );
   assert.equal(verdict.keep, false);
-});
-
-test('decideObjectEvent: a reversed box is filtered, not treated as coordinate-free', () => {
-  // classify.ts does not enforce x2 > x1, and geometry.ts normalizes reversed
-  // extents. So a reversed box carries real coordinates and must go through the
-  // zone test rather than taking the fail-open path meant for empty payloads.
-  const zones = compile([objectZone({ name: 'Driveway' })]);
-  const decision = decideObjectEvent(
-    {
-      kind: 'object',
-      category: 'person',
-      active: true,
-      // The OUTSIDE box, expressed back-to-front.
-      detections: [{ box: { x: 0.95, y: 0.95, width: -0.05, height: -0.05 } }],
-    },
-    zones,
-  );
-  assert.equal(decision.kind, 'suppress');
 });
 
 test('findKeptDetection returns the first detection the zones keep', () => {

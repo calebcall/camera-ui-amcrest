@@ -68,8 +68,8 @@ function toPolygon(points: Point[]): Vec2[] {
  * Compiles the camera's zones into the flat list the matcher walks.
  *
  * Mirrors the server's own normalization (`toRustZones` in
- * `camera/decoder/detection-pipeline.js`), so a box this plugin suppresses is
- * one camera.ui would have suppressed too:
+ * `camera/decoder/detection-pipeline.js`), so what this plugin says about a box
+ * matches what camera.ui will do with it:
  *
  * - `privacy` zones become masks, matched by intersection, and only when they
  *   drop detections — a privacy zone that merely hides the picture leaves the
@@ -131,8 +131,8 @@ const KEEP: ZoneVerdict = { keep: true };
 const BOX_LOG_PRECISION = 2;
 
 /**
- * Renders the box that was tested, so a suppression log says where the object
- * was and not merely which zone objected. Fixed precision on purpose: raw
+ * Renders the box that was tested, so a rejection log says where the object was
+ * and not merely which zone objected. Fixed precision on purpose: raw
  * floats print as 0.7100000000000001 and make the line unreadable.
  */
 export function describeBox(box: BoundingBox): string {
@@ -224,19 +224,40 @@ export function keepDetection(
 }
 
 /**
- * What the caller should do with an object event.
+ * What the camera's zones make of an object event.
  *
- * `skipped` still reports — it means the event bypassed zone filtering rather
- * than passing it, and carries why so the caller can say so once in the log.
+ * Observation only. camera.ui applies these same zones to every detection a
+ * camera-side sensor reports (`applyExternalDetectionFilters` in
+ * `camera/decoder/detection-coordinator.js`), so the plugin filtering as well
+ * would be the same rule run twice — and the plugin's copy is the weaker of the
+ * two: it judges the single coarse box the camera sent, while the host judges
+ * the tracked and optionally assist-refined box. Worse, a detection the plugin
+ * withholds is one the host never sees at all, which costs the PTZ
+ * autotracker's presence feed, the object-assist re-filter and the detection
+ * record.
+ *
+ * So the verdict is reported rather than enforced. It exists because a zone
+ * that quietly drops everything looks exactly like a camera that never fires
+ * (#27), and because the camera's one-position-per-event limitation is only
+ * visible from here (#26).
  */
-export type ZoneDecision =
-  | { kind: 'report'; detections: AmcrestDetection[]; dropped: string[] }
-  | {
-    kind: 'skipped';
-    detections: AmcrestDetection[];
-    reason: 'deactivation' | 'no-coordinates';
-  }
-  | { kind: 'suppress'; reasons: string[] };
+export type ZoneReview =
+  /** Nothing drawn, so there is nothing to say. */
+  | { kind: 'no-zones' }
+  /**
+   * A Stop. Its boxes describe where the object left, not where it was seen, so
+   * the zones have no claim on it — but it is the only chance to find out where
+   * a rejected object ended up. See reviewSuppressedStart in camera.ts.
+   */
+  | { kind: 'deactivation'; detections: AmcrestDetection[] }
+  /** No usable position, so no zone can judge it either way. */
+  | { kind: 'no-coordinates'; detections: AmcrestDetection[] }
+  /** Every detection is somewhere the zones accept. */
+  | { kind: 'pass'; detections: AmcrestDetection[] }
+  /** Some are, some are not. */
+  | { kind: 'partial'; kept: AmcrestDetection[]; dropped: string[] }
+  /** None are. This is the case camera.ui will act on by dropping the event. */
+  | { kind: 'fail'; reasons: string[] };
 
 type ObjectClassification = Extract<AmcrestClassification, { kind: 'object' }>;
 
@@ -245,8 +266,7 @@ function hasCoordinates(detection: AmcrestDetection): boolean {
   // Magnitude, not sign: firmware is not obliged to send `[x1, y1, x2, y2]` the
   // right way round, and `geometry.ts` already normalizes a reversed rectangle.
   // Testing the raw values would classify a reversed-but-real box as having no
-  // coordinates, which is the fail-open path rather than the zone test it
-  // deserves. Only a genuinely zero-area box counts as carrying nothing.
+  // coordinates, which would claim a zone could not judge a box it can.
   return (
     Math.abs(detection.box.width) > 0 && Math.abs(detection.box.height) > 0
   );
@@ -255,7 +275,7 @@ function hasCoordinates(detection: AmcrestDetection): boolean {
 /**
  * True if any of these detections carries a usable position. Wraps the
  * per-detection test so callers outside this module can ask the same question
- * the gating path asks, rather than reimplementing it and drifting.
+ * the review asks, rather than reimplementing it and drifting.
  */
 export function hasUsableCoordinates(detections: AmcrestDetection[]): boolean {
   return detections.some(hasCoordinates);
@@ -275,35 +295,17 @@ export function findKeptDetection(
   return detections.find((d) => keepDetection(d.box, label, zones).keep);
 }
 
-/**
- * Applies the camera's detection zones to a classified object event.
- *
- * Deactivations and coordinate-free activations deliberately bypass filtering;
- * see the inline notes. Everything else is filtered per detection, and an event
- * whose detections are all dropped is suppressed outright rather than reported
- * as an empty activation.
- */
-export function decideObjectEvent(
+/** Measures a classified object event against the camera's zones. */
+export function reviewObjectEvent(
   c: ObjectClassification,
   zones: CompiledZone[],
-): ZoneDecision {
-  // A Stop carries no boxes, so it can never satisfy a zone. Filtering it would
-  // suppress it, and the sensor would stay latched active forever.
-  if (!c.active) {
-    return {
-      kind: 'skipped',
-      detections: c.detections ?? [],
-      reason: 'deactivation',
-    };
-  }
-
+): ZoneReview {
   const detections = c.detections ?? [];
-  // Fail open. Some firmware sends a bare Start with no payload and some sends
-  // a placeholder Rect of [0,0,0,0]; both mean "no position", and a terse
-  // payload must never cost a real person detection. A zero-area box would
-  // otherwise fail every include zone and be suppressed.
+
+  if (zones.length === 0) return { kind: 'no-zones' };
+  if (!c.active) return { kind: 'deactivation', detections };
   if (!hasUsableCoordinates(detections)) {
-    return { kind: 'skipped', detections, reason: 'no-coordinates' };
+    return { kind: 'no-coordinates', detections };
   }
 
   const kept: AmcrestDetection[] = [];
@@ -314,6 +316,7 @@ export function decideObjectEvent(
     else dropped.push(verdict.reason);
   }
 
-  if (kept.length === 0) return { kind: 'suppress', reasons: dropped };
-  return { kind: 'report', detections: kept, dropped };
+  if (kept.length === 0) return { kind: 'fail', reasons: dropped };
+  if (dropped.length > 0) return { kind: 'partial', kept, dropped };
+  return { kind: 'pass', detections: kept };
 }

@@ -188,8 +188,8 @@ test('destroy cancels pending pulse timers', (t) => {
 });
 
 test('a Stop for a never-activated category leaves other categories alone', () => {
-  // Zone filtering can suppress a Start while its matching Stop still arrives.
-  // The Stop must be harmless rather than clobbering an unrelated category.
+  // A Stop can arrive for a category that never activated — after an event-stream
+  // reconnect, say. It must be harmless rather than clobbering another category.
   const sensor = new AmcrestObjectSensor();
   const calls = observe(sensor);
 
