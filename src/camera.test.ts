@@ -4,6 +4,7 @@ import { test } from 'node:test';
 
 import { AmcrestSnapshotError } from './amcrest/api.js';
 import { AmcrestCamera } from './camera.js';
+import { AmcrestProblemSensor, AmcrestTamperSensor } from './sensors/index.js';
 import { compileZones } from './zones/filter.js';
 
 import type { AmcrestDetection } from './amcrest/classify.js';
@@ -691,4 +692,110 @@ test('getSnapshot: with no client configured it returns undefined quietly', asyn
   const camera = new AmcrestCamera(device as unknown as CameraDevice);
 
   assert.equal(await camera.getSnapshot(), undefined);
+});
+
+/**
+ * An AmcrestCamera wired to real tamper/problem sensors whose state writes are
+ * observed, plus the debug log.
+ *
+ * The sensors are the real classes — they are pure state holders, so nothing
+ * about them needs a live host — with `setDetected` overridden to record.
+ */
+function stateHarness(): {
+  dispatch: (code: string, action: string) => void;
+  tamper: boolean[];
+  problem: boolean[];
+  debug: string[];
+} {
+  const debug: string[] = [];
+  const noop = (): void => {};
+  const device = {
+    name: 'Front Door',
+    logger: {
+      log: noop,
+      warn: noop,
+      error: noop,
+      attention: noop,
+      debug: (...parts: unknown[]) => debug.push(parts.join(' ')),
+    },
+    createStorage: () => ({ values: {}, save: async () => {} }),
+  };
+
+  const camera = new AmcrestCamera(device as unknown as CameraDevice);
+  const internals = camera as unknown as {
+    tamper: AmcrestTamperSensor;
+    problem: AmcrestProblemSensor;
+    dispatchEvent(blob: string): void;
+  };
+
+  const tamper: boolean[] = [];
+  const problem: boolean[] = [];
+  internals.tamper = new AmcrestTamperSensor();
+  internals.problem = new AmcrestProblemSensor();
+  internals.tamper.setDetected = (v: boolean) => tamper.push(v);
+  internals.problem.setDetected = (v: boolean) => problem.push(v);
+
+  return {
+    dispatch: (code, action) =>
+      internals.dispatchEvent(`Code=${code};action=${action};index=0`),
+    tamper,
+    problem,
+    debug,
+  };
+}
+
+test('dispatchEvent: a lens-blind event raises and clears tamper', () => {
+  const h = stateHarness();
+
+  h.dispatch('VideoBlind', 'Start');
+  h.dispatch('VideoBlind', 'Stop');
+
+  assert.deepEqual(h.tamper, [true, false]);
+  assert.deepEqual(h.problem, []);
+});
+
+test('dispatchEvent: a second tamper code holds the sensor up past the first Stop', () => {
+  const h = stateHarness();
+
+  h.dispatch('VideoBlind', 'Start');
+  h.dispatch('SceneChange', 'Start');
+  h.dispatch('VideoBlind', 'Stop');
+
+  assert.equal(h.tamper[h.tamper.length - 1], true);
+  assert.ok(
+    h.debug.some((l) => l === 'Tamper active: SceneChange'),
+    `expected the log to name what is still holding tamper up, got: ${JSON.stringify(h.debug)}`,
+  );
+});
+
+test('dispatchEvent: storage faults land on the problem sensor, not tamper', () => {
+  const h = stateHarness();
+
+  h.dispatch('StorageLowSpace', 'Start');
+
+  assert.deepEqual(h.problem, [true]);
+  assert.deepEqual(h.tamper, []);
+});
+
+test('dispatchEvent: the clearing log names the code that ended', () => {
+  const h = stateHarness();
+
+  h.dispatch('VideoLoss', 'Start');
+  h.dispatch('VideoLoss', 'Stop');
+
+  assert.ok(
+    h.debug.includes('Problem cleared (VideoLoss ended)'),
+    `got: ${JSON.stringify(h.debug)}`,
+  );
+});
+
+test('dispatchEvent: a tamper Pulse activates and expires on its own', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = stateHarness();
+
+  h.dispatch('SceneChange', 'Pulse');
+  assert.deepEqual(h.tamper, [true]);
+
+  t.mock.timers.tick(30_000);
+  assert.equal(h.tamper[h.tamper.length - 1], false);
 });

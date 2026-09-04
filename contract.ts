@@ -5,7 +5,15 @@ import type { PluginContract } from '@camera.ui/sdk';
 export const contract: PluginContract = {
   name: 'Amcrest',
   role: PluginRole.CameraController,
-  provides: [SensorType.Motion, SensorType.Object, SensorType.Audio, SensorType.Doorbell, SensorType.PTZ],
+  provides: [
+    SensorType.Motion,
+    SensorType.Object,
+    SensorType.Audio,
+    SensorType.Doorbell,
+    SensorType.PTZ,
+    SensorType.Tamper,
+    SensorType.Problem,
+  ],
   consumes: [],
   interfaces: [PluginInterface.DiscoveryProvider],
 };

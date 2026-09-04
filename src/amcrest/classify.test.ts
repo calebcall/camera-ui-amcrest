@@ -241,3 +241,57 @@ test("no longer treats the speculative 'Vehicle' code as an event", () => {
     undefined,
   );
 });
+
+test('classifies the view-interference codes as tamper', () => {
+  for (const code of [
+    'VideoBlind',
+    'SceneChange',
+    'VideoUnFocus',
+    'VideoAbnormalDetection',
+  ]) {
+    const c = classifyAmcrestEvent({ code, action: 'Start' });
+    assert.deepEqual(c, { kind: 'tamper', code, active: true }, code);
+  }
+});
+
+test('classifies the device-fault codes as problem', () => {
+  for (const code of [
+    'VideoLoss',
+    'StorageNotExist',
+    'StorageFailure',
+    'StorageLowSpace',
+  ]) {
+    const c = classifyAmcrestEvent({ code, action: 'Start' });
+    assert.deepEqual(c, { kind: 'problem', code, active: true }, code);
+  }
+});
+
+test('a tamper Stop deactivates and names its own code', () => {
+  // The code has to survive: one sensor stands for several of them and can only
+  // tell one Stop from another by name.
+  assert.deepEqual(
+    classifyAmcrestEvent({ code: 'VideoBlind', action: 'Stop' }),
+    {
+      kind: 'tamper',
+      code: 'VideoBlind',
+      active: false,
+    },
+  );
+});
+
+test('a tamper Pulse activates and is flagged momentary', () => {
+  assert.deepEqual(
+    classifyAmcrestEvent({ code: 'SceneChange', action: 'Pulse' }),
+    { kind: 'tamper', code: 'SceneChange', active: true, momentary: true },
+  );
+});
+
+test('a Start/Stop state event is not marked momentary', () => {
+  const c = classifyAmcrestEvent({
+    code: 'StorageLowSpace',
+    action: 'Start',
+  }) as {
+    momentary?: boolean;
+  };
+  assert.equal(c.momentary, undefined);
+});

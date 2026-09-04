@@ -1,10 +1,10 @@
 # Amcrest
 
-Amcrest and Dahua-compatible camera integration for camera.ui. Provides camera discovery, live streaming, two-way audio, PTZ control, and motion, object, audio and doorbell events via the native Amcrest/Dahua CGI API.
+Amcrest and Dahua-compatible camera integration for camera.ui. Provides camera discovery, live streaming, two-way audio, PTZ control, motion, object, audio and doorbell events, and tamper/fault state via the native Amcrest/Dahua CGI API.
 
 ## Requirements
 
-- **camera.ui 2.0.24 or newer.** Server 2.0.23 rebuilt the sensor system, and this plugin targets the SDK generation that came with it. On older servers the plugin's sensors would not work — the 2.0.24 floor turns that into a clear message at install time instead of sensors that silently never appear. 2.0.24 also carries the server fixes for per-camera plugin settings and camera-bound sensor assignment, both of which this plugin relies on.
+- **camera.ui 2.1.10 or newer.** Server 2.1.6 replaced the single detection-zone list with one list per purpose (motion, object, privacy, alert, lines), and 2.1.10 settled that shape by dropping the interim include/exclude filter. This plugin targets the SDK generation that came with it, so on an older server its zones — and, on servers before 2.0.24, its sensors — would not work. The floor turns that into a clear message at install time instead of a feature that silently never appears.
 - **Node 24 or newer.** `@seydx/rtsp`, used for RTSP relay and talkback, ships syntax Node 22 cannot parse.
 
 ## Supported devices
@@ -21,6 +21,7 @@ NVR-attached channels are not supported in this release — see [Known limitatio
 - **Live view & snapshot** — native RTSP streaming and CGI snapshot capture, no ONVIF required.
 - **Two-way audio** — talkback over the device's native audio path. Amcrest-branded devices use the AAC path; Dahua-branded doorbells use G.711A (see [Known limitations](#known-limitations--v2)).
 - **Events** — motion, object detection (person/vehicle), audio detection, and doorbell press, all delivered over the device's native event stream (no polling).
+- **Tamper & fault state** — the camera's own reports that its view has been interfered with (lens covered, scene changed, defocused) or that the device is unwell (video signal lost, storage missing, failing or nearly full), as two sensors.
 - **PTZ** — pan/tilt/zoom control for capable cameras, exposed as a PTZ sensor/service.
 - **Discovery** — automatic discovery of Dahua-compatible devices on the local network via UDP, plus manual add for devices that don't respond to discovery (e.g. across subnets).
 
@@ -142,6 +143,28 @@ SmartMotionHuman (person) carried no coordinates, so detection zones cannot be a
 ```
 
 That is expected on some firmware. Those events are always reported rather than dropped, so a terse camera never costs you a real detection. Note that this line is only logged when you have zones drawn — with no zones there is nothing for the missing coordinates to cost you, so it is not worth saying.
+
+## Tamper and fault sensors
+
+Two sensors carry the camera's own opinion of its health:
+
+| Sensor      | Raised by                                                             |
+| ----------- | --------------------------------------------------------------------- |
+| **Tamper**  | `VideoBlind`, `SceneChange`, `VideoUnFocus`, `VideoAbnormalDetection` |
+| **Problem** | `VideoLoss`, `StorageNotExist`, `StorageFailure`, `StorageLowSpace`   |
+
+Each sensor stands for several codes at once and is true while _any_ of them is active, so a `SceneChange` ending does not clear a tamper that `VideoBlind` is still holding up. Debug logging names what is still holding a sensor up:
+
+```
+Tamper active: VideoBlind, SceneChange
+Tamper cleared (SceneChange ended)
+```
+
+Both sensors are registered for every camera, because whether a device emits these codes cannot be probed — only observed. A camera that never reports interference or a fault simply leaves its sensors at false, which is a truthful answer rather than a missing one.
+
+They also work as cascade triggers: add one under the camera's detection settings and a tamper or fault will start a detection event of its own.
+
+**These code mappings come from the Dahua CGI event list, not from a capture.** Firmware varies in which codes it emits and, occasionally, in what it means by them. If one of these turns out to mean something else on your hardware, please open an issue — `npm run watch-events` (below) prints every code the camera sends alongside how the plugin classifies it.
 
 ## Troubleshooting snapshots and event thumbnails
 
