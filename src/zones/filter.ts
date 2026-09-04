@@ -7,23 +7,32 @@ import type {
 } from '../amcrest/classify.js';
 import type {
   BoundingBox,
+  CameraZones,
   DetectionLabel,
-  DetectionZone,
-  ZoneFilter,
+  ObjectZone,
+  Point,
+  PrivacyZone,
+  ZoneLabel,
   ZoneType,
 } from '@camera.ui/sdk';
 
 /** camera.ui stores zone polygons as 0-100 percentages; we work in 0-1. */
 const ZONE_COORD_MAX = 100;
 
-/** A `DetectionZone` normalized once, so per-event matching stays cheap. */
+/**
+ * One zone from `CameraZones` normalized into 0-1 space, so per-event matching
+ * stays cheap.
+ *
+ * The SDK models object zones and privacy zones as separate shapes, but they
+ * are decided against the same box in the same pass, so they compile to one
+ * type here. `isPrivacyMask` is what tells them apart afterwards.
+ */
 export interface CompiledZone {
   name: string;
   polygon: Vec2[];
   type: ZoneType;
-  filter: ZoneFilter;
-  /** Empty means the zone applies to every label. */
-  labels: Set<DetectionLabel>;
+  /** Empty means the zone applies to every label. Always empty for a mask. */
+  labels: Set<ZoneLabel>;
   isPrivacyMask: boolean;
 }
 
@@ -45,15 +54,33 @@ function isPoint(point: unknown): point is [number, number] {
  * than three points cannot enclose anything, and malformed points cannot be
  * divided at all.
  */
-function isDrawable(zone: DetectionZone): boolean {
+function isDrawable(points: Point[] | undefined): boolean {
   return (
-    Array.isArray(zone.points) &&
-    zone.points.length >= 3 &&
-    zone.points.every((p) => isPoint(p))
+    Array.isArray(points) && points.length >= 3 && points.every((p) => isPoint(p))
   );
 }
 
+function toPolygon(points: Point[]): Vec2[] {
+  return points.map(([x, y]): Vec2 => [x / ZONE_COORD_MAX, y / ZONE_COORD_MAX]);
+}
+
 /**
+ * Compiles the camera's zones into the flat list the matcher walks.
+ *
+ * Mirrors the server's own normalization (`toRustZones` in
+ * `camera/decoder/detection-pipeline.js`), so a box this plugin suppresses is
+ * one camera.ui would have suppressed too:
+ *
+ * - `privacy` zones become masks, matched by intersection, and only when they
+ *   drop detections — a privacy zone that merely hides the picture leaves the
+ *   detector watching.
+ * - `object` zones become include gates keeping their own `type` and labels.
+ * - `alert` zones are deliberately absent: they never filter, they only decide
+ *   which detections may raise a push notification.
+ * - `motion` zones are absent too. They scope the `motion` label alone, and
+ *   this plugin's motion events (`VideoMotion`) carry no coordinates to test.
+ * - `lines` are events in their own right, handled in `classify.ts`.
+ *
  * Runs once per zone-list change, not per event. Unusable zones are dropped
  * rather than throwing: this runs inside a shared SDK property-change
  * subscriber, whose `Subject.next()` calls subscribers in a bare loop, so a
@@ -61,18 +88,33 @@ function isDrawable(zone: DetectionZone): boolean {
  * seeding call in `initialize()` it would leave the camera offline and skip
  * every camera after it in the list.
  */
-export function compileZones(zones: DetectionZone[]): CompiledZone[] {
-  return zones.filter(isDrawable).map((z) => ({
-    name: z.name,
-    polygon: z.points.map(([x, y]): Vec2 => [
-      x / ZONE_COORD_MAX,
-      y / ZONE_COORD_MAX,
-    ]),
-    type: z.type,
-    filter: z.filter,
-    labels: new Set(z.labels ?? []),
-    isPrivacyMask: z.isPrivacyMask,
-  }));
+export function compileZones(zones: CameraZones | undefined): CompiledZone[] {
+  const privacy: PrivacyZone[] = zones?.privacy ?? [];
+  const object: ObjectZone[] = zones?.object ?? [];
+
+  const masks = privacy
+    .filter((z) => z.dropDetections !== false && isDrawable(z.points))
+    .map(
+      (z): CompiledZone => ({
+        name: z.name,
+        polygon: toPolygon(z.points),
+        type: 'intersect',
+        labels: new Set<ZoneLabel>(),
+        isPrivacyMask: true,
+      }),
+    );
+
+  const gates = object.filter((z) => isDrawable(z.points)).map(
+    (z): CompiledZone => ({
+      name: z.name,
+      polygon: toPolygon(z.points),
+      type: z.type,
+      labels: new Set<ZoneLabel>(z.labels ?? []),
+      isPrivacyMask: false,
+    }),
+  );
+
+  return [...masks, ...gates];
 }
 
 /**
@@ -112,8 +154,8 @@ function inZone(box: BoundingBox, zone: CompiledZone): boolean {
 /**
  * Applies camera.ui's zone model to a single detection.
  *
- * `type` decides what "in the zone" means; `filter` decides whether being in it
- * qualifies or disqualifies.
+ * Object zones are include gates — the SDK has no exclude mode any more, that
+ * role belongs to privacy zones. `type` decides what "in the zone" means.
  *
  * The subtle rule is what happens to a label no zone mentions, and it is not
  * the intuitive one. Drawing ANY gating zone switches the camera into
@@ -122,13 +164,11 @@ function inZone(box: BoundingBox, zone: CompiledZone): boolean {
  * all keeps everything, which is still what makes the feature invisible to
  * anyone who has not drawn one.
  *
- * This mirrors camera.ui's own rust zone filter, verified against it directly
- * rather than inferred. It matters because the two run side by side: the core
- * filters detections from its frame pipeline, this plugin filters the events
- * the camera reports, and the same zones must mean the same thing on both
- * paths. Until 1.8.0 this function returned "keep" for an unmentioned label —
- * so a camera whose zones listed only person reported packages through Amcrest
- * that the core silently dropped.
+ * This mirrors camera.ui's own rust zone filter (`objectWhitelist` in
+ * `camera/decoder/detection-pipeline.js`), verified against it directly rather
+ * than inferred. Until 1.8.0 this function returned "keep" for an unmentioned
+ * label — so a camera whose zones listed only person reported packages through
+ * Amcrest that the core silently dropped.
  *
  * Privacy masks are deliberately excluded from that test. A mask is a redaction,
  * not a gate, and a camera carrying nothing but privacy masks is not in
@@ -139,11 +179,9 @@ export function keepDetection(
   label: DetectionLabel,
   zones: CompiledZone[],
 ): ZoneVerdict {
-  const applicable = zones.filter((z) => applies(z, label));
-
-  // Privacy masks win outright: anything wholly inside one is dropped,
-  // whatever that zone's own intersect/contain setting says.
-  const mask = applicable.find(
+  // Privacy masks win outright: anything wholly inside one is dropped. They
+  // carry no labels, so they apply to every detection.
+  const mask = zones.find(
     (z) => z.isPrivacyMask && boxInsidePolygon(box, z.polygon),
   );
   if (mask)
@@ -156,7 +194,7 @@ export function keepDetection(
   // allow-listed mode at all — as opposed to `gates` below, which is the subset
   // that actually has an opinion about THIS label.
   const anyGates = zones.some((z) => !z.isPrivacyMask);
-  const gates = applicable.filter((z) => !z.isPrivacyMask);
+  const gates = zones.filter((z) => !z.isPrivacyMask && applies(z, label));
 
   if (gates.length === 0) {
     if (!anyGates) return KEEP;
@@ -166,22 +204,12 @@ export function keepDetection(
     };
   }
 
-  const excluded = gates.find((z) => z.filter === 'exclude' && inZone(box, z));
-  if (excluded) {
-    return {
-      keep: false,
-      reason: `${describeBox(box)} inside exclude zone '${excluded.name}'`,
-    };
-  }
+  if (gates.some((z) => inZone(box, z))) return KEEP;
 
-  const includes = gates.filter((z) => z.filter === 'include');
-  if (includes.length === 0) return KEEP;
-  if (includes.some((z) => inZone(box, z))) return KEEP;
-
-  const names = includes.map((z) => `'${z.name}'`).join(', ');
+  const names = gates.map((z) => `'${z.name}'`).join(', ');
   return {
     keep: false,
-    reason: `${describeBox(box)} outside include zone(s) ${names}`,
+    reason: `${describeBox(box)} outside object zone(s) ${names}`,
   };
 }
 

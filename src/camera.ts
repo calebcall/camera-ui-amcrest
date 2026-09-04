@@ -43,7 +43,7 @@ import type { CompiledZone } from './zones/filter.js';
 import type {
   CameraDevice,
   DetectionLabel,
-  DetectionZone,
+  CameraZones,
   DeviceStorage,
   Disposable,
   LoggerService,
@@ -178,10 +178,10 @@ export class AmcrestCamera {
     await this.setupStreaming();
     await this.cameraDevice.implement(new Implementations(this));
     await this.setupSensors();
-    this.zones = compileZones(this.cameraDevice.detectionZones ?? []);
+    this.zones = compileZones(this.cameraDevice.zones);
     this.zonesSub = this.cameraDevice
-      .onPropertyChange('detectionZones')
-      .subscribe(({ newData }) => this.applyDetectionZones(newData ?? []));
+      .onPropertyChange('zones')
+      .subscribe(({ newData }) => this.applyDetectionZones(newData));
     this.startEventLoop();
     this.cameraDevice.connect();
   }
@@ -554,7 +554,7 @@ export class AmcrestCamera {
    * the same box both failed and passed. Same rationale as the reconnect clear
    * in runEventLoop — the premise the entry rests on no longer holds.
    */
-  private applyDetectionZones(zones: DetectionZone[]): void {
+  private applyDetectionZones(zones: CameraZones | undefined): void {
     this.zones = compileZones(zones);
     this.suppressedStarts.clear();
     this.log.debug(`Detection zones updated: ${this.zones.length} zone(s)`);

@@ -8,12 +8,13 @@ import type { AmcrestDetection } from './amcrest/classify.js';
 import type { CompiledZone } from './zones/filter.js';
 import type {
   CameraDevice,
+  CameraZones,
   DetectionLabel,
-  DetectionZone,
+  ObjectZone,
 } from '@camera.ui/sdk';
 
-/** A 0.2-0.8 include/intersect square. */
-const DRIVEWAY: DetectionZone = {
+/** A 0.2-0.8 intersect object zone. */
+const DRIVEWAY: ObjectZone = {
   name: 'Driveway',
   points: [
     [20, 20],
@@ -22,11 +23,21 @@ const DRIVEWAY: DetectionZone = {
     [20, 80],
   ],
   type: 'intersect',
-  filter: 'include',
   labels: [],
-  isPrivacyMask: false,
   color: '#ffffff',
 };
+
+/** A `CameraZones` carrying just the object zones a test draws. */
+function cameraZones(object: ObjectZone[]): CameraZones {
+  return {
+    privacyFallback: 'send',
+    motion: [],
+    object,
+    privacy: [],
+    alert: [],
+    lines: [],
+  };
+}
 
 // 0-8191 rectangles, as the camera sends them.
 const OUTSIDE_RECT = '[7000,7000,7500,7500]'; // 0.85-0.92, clear of the zone
@@ -54,7 +65,7 @@ interface CameraInternals {
     pulse(category: string, detections?: AmcrestDetection[]): void;
   };
   dispatchEvent(blob: string): void;
-  applyDetectionZones(zones: DetectionZone[]): void;
+  applyDetectionZones(zones: CameraZones | undefined): void;
   suppressedStarts: Map<DetectionLabel, string>;
 }
 
@@ -66,10 +77,10 @@ interface CameraInternals {
  * a logger and a storage factory. The private fields are set directly rather
  * than by running initialize(), which would need a real camera on the network.
  */
-function harness(zones: DetectionZone[]): {
+function harness(zones: ObjectZone[]): {
   dispatch: (blob: string) => void;
   forget: () => void;
-  setZones: (zones: DetectionZone[]) => void;
+  setZones: (zones: ObjectZone[]) => void;
   calls: SensorCall[];
   debug: string[];
 } {
@@ -91,7 +102,7 @@ function harness(zones: DetectionZone[]): {
   const internals = camera as unknown as CameraInternals;
   const calls: SensorCall[] = [];
 
-  internals.zones = compileZones(zones);
+  internals.zones = compileZones(cameraZones(zones));
   internals.object = {
     report: (category, active, detections) =>
       calls.push({
@@ -107,9 +118,9 @@ function harness(zones: DetectionZone[]): {
   return {
     dispatch: (blob) => internals.dispatchEvent(blob),
     forget: () => internals.suppressedStarts.clear(),
-    // The real code path the detectionZones subscriber runs, so a test can edit
-    // the zone list exactly as a user would mid-event.
-    setZones: (next) => internals.applyDetectionZones(next),
+    // The real code path the zones subscriber runs, so a test can edit the
+    // zone list exactly as a user would mid-event.
+    setZones: (next) => internals.applyDetectionZones(cameraZones(next)),
     calls,
     debug,
   };
@@ -232,9 +243,7 @@ test('dispatchEvent: an object that enters the zones after a suppressed Start is
   assert.ok(hit, `expected the walk-in line, got: ${JSON.stringify(h.debug)}`);
   assert.ok(hit.includes('Stop box [0.37,0.37,0.12,0.12]'), hit);
   assert.ok(
-    hit.includes(
-      "box [0.85,0.85,0.06,0.06] outside include zone(s) 'Driveway'",
-    ),
+    hit.includes("box [0.85,0.85,0.06,0.06] outside object zone(s) 'Driveway'"),
     hit,
   );
 
@@ -348,7 +357,7 @@ test('dispatchEvent: a suppression forgotten on reconnect is not measured agains
 });
 
 /** Every zone verdict flips if this replaces DRIVEWAY: it accepts the frame. */
-const WHOLE_FRAME: DetectionZone = {
+const WHOLE_FRAME: ObjectZone = {
   ...DRIVEWAY,
   name: 'Everywhere',
   points: [
