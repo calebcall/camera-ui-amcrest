@@ -1,3 +1,4 @@
+import { classifyDevice } from './amcrest/device.js';
 import { buildRtspUrl } from './amcrest/rtsp-url.js';
 
 import type { AmcrestStream } from './amcrest/encode-config.js';
@@ -94,6 +95,9 @@ export function buildCameraConfig(input: BuildCameraConfigInput): CameraConfig {
   return {
     name: input.name,
     nativeId: input.nativeId,
+    // Lets camera.ui treat a doorbell as one (doorbell UI and notifications).
+    // Decided from the model by the same rule the doorbell sensor uses.
+    type: classifyDevice(input.info.model).isDoorbell ? 'doorbell' : 'camera',
     info: {
       manufacturer: input.info.manufacturer,
       model: input.info.model,
