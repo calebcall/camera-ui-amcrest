@@ -15,13 +15,24 @@ function toSpeed(magnitude: number): number {
   return Math.max(1, Math.round(clamped * 8));
 }
 
-export function ptzCommandForVelocity(v: PtzVelocity): PtzCommand {
+/**
+ * Maps a continuous-move velocity onto a ptz.cgi command.
+ *
+ * @param activeCode - Code of the move currently running, if any. Firmware only
+ *   honours a stop whose code matches the running move (a stop for `Up` leaves
+ *   a zoom running to its limit), so a zero velocity stops this code. Without
+ *   one, the stop falls back to `Up`.
+ */
+export function ptzCommandForVelocity(
+  v: PtzVelocity,
+  activeCode?: string,
+): PtzCommand {
   const pan = v.panSpeed ?? 0;
   const tilt = v.tiltSpeed ?? 0;
   const zoom = v.zoomSpeed ?? 0;
 
   if (pan === 0 && tilt === 0 && zoom === 0) {
-    return { action: 'stop', code: 'Up', arg2: 0 };
+    return { action: 'stop', code: activeCode ?? 'Up', arg2: 0 };
   }
 
   if (zoom !== 0) {

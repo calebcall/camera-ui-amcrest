@@ -3,11 +3,35 @@ import { test } from 'node:test';
 
 import { ptzCommandForVelocity } from './ptz-commands.js';
 
-test('zero velocity is a stop', () => {
+test('zero velocity with no active move stops with Up', () => {
   assert.deepEqual(
     ptzCommandForVelocity({ panSpeed: 0, tiltSpeed: 0, zoomSpeed: 0 }),
     { action: 'stop', code: 'Up', arg2: 0 },
   );
+});
+
+test('zero velocity stops the zoom that was started', () => {
+  // Firmware ignores a stop whose code differs from the running move, so a
+  // stop for Up leaves the zoom motor running to its limit.
+  assert.deepEqual(
+    ptzCommandForVelocity(
+      { panSpeed: 0, tiltSpeed: 0, zoomSpeed: 0 },
+      'ZoomTele',
+    ),
+    { action: 'stop', code: 'ZoomTele', arg2: 0 },
+  );
+  assert.equal(
+    ptzCommandForVelocity({ zoomSpeed: 0 }, 'ZoomWide').code,
+    'ZoomWide',
+  );
+});
+
+test('zero velocity stops the pan that was started', () => {
+  assert.deepEqual(ptzCommandForVelocity({ panSpeed: 0 }, 'Left'), {
+    action: 'stop',
+    code: 'Left',
+    arg2: 0,
+  });
 });
 
 test('pan right', () => {
