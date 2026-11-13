@@ -1,6 +1,11 @@
 import { PassThrough } from 'node:stream';
 
-import { AvSource, BackchannelTranscoder, Relay } from '@seydx/rtsp';
+import {
+  AvSource,
+  BackchannelTranscoder,
+  Relay,
+  RtspServerSink,
+} from '@seydx/rtsp';
 
 import { subtypeFromSourceName } from './adopt.js';
 import { AmcrestClient, AmcrestSnapshotError } from './amcrest/api.js';
@@ -57,7 +62,7 @@ import type {
   SnapshotInterface,
   StreamingInterface,
 } from '@camera.ui/sdk';
-import type { Logger, RtspServerSink } from '@seydx/rtsp';
+import type { Logger } from '@seydx/rtsp';
 
 // Advertised to RTSP viewers as the backchannel codec and, reused verbatim, as the
 // BackchannelTranscoder's inbound ("from") format — the shapes are identical.
@@ -96,7 +101,6 @@ export class AmcrestCamera {
   private rtspServer?: RtspServerSink;
   private relayLogger?: Logger;
   private transcoder?: BackchannelTranscoder;
-  private transcoderStarting?: Promise<void>;
   private talkbackBody?: PassThrough;
   /** Epoch ms before which no new talkback session is opened; see blockTalkback. */
   private talkbackBlockedUntil = 0;
@@ -296,8 +300,9 @@ export class AmcrestCamera {
     this.tamper?.destroy();
     this.problem?.destroy();
     this.resetTalkback();
-    void this.rtspServer?.shutdown();
-    void this.relay?.stop();
+    // Fire-and-forget: shutdown failures must not become unhandled rejections.
+    void this.rtspServer?.shutdown().catch(() => {});
+    void this.relay?.stop().catch(() => {});
     this.log.log('Amcrest camera destroyed:', this.cameraDevice.name);
   }
 
@@ -322,11 +327,11 @@ export class AmcrestCamera {
       logger: this.relayLogger,
     });
     this.relay.on('stop', () => this.resetTalkback());
-    this.rtspServer = await this.relay.serveRtsp({
+    this.rtspServer = await new RtspServerSink(this.relay, {
       path: 'live',
-      backchannel: { ...BACKCHANNEL_ADVERTISE },
+      backchannel: { advertise: { ...BACKCHANNEL_ADVERTISE } },
       sdpTimeout: 30000,
-    });
+    }).listen();
     this.rtspServer.on('backchannel', (rtp: Buffer) =>
       this.handleTalkbackRtp(rtp),
     );
@@ -356,18 +361,24 @@ export class AmcrestCamera {
           bitRate: 32000,
         },
         output: (chunk: Buffer) => this.talkbackBody?.write(chunk),
+        onError: (e) => this.failTalkback(e),
         logger: this.relayLogger,
       });
-      this.transcoderStarting = this.transcoder.start();
     }
-    this.transcoderStarting
-      ?.then(() => this.transcoder?.push(rtp))
-      .catch((e) => {
-        this.log.error('Talkback transcode failed:', e);
-        // Reset so the next RTP packet re-initializes a fresh transcoder/POST instead
-        // of getting stuck behind the `if (!this.transcoder)` guard forever.
-        this.resetTalkback();
-      });
+    // start() and push() are synchronous and throw on failure.
+    try {
+      if (!this.transcoder.active) this.transcoder.start();
+      this.transcoder.push(rtp);
+    } catch (e) {
+      this.failTalkback(e);
+    }
+  }
+
+  private failTalkback(error: unknown): void {
+    this.log.error('Talkback transcode failed:', error);
+    // Reset so the next RTP packet re-initializes a fresh transcoder/POST instead
+    // of getting stuck behind the `if (!this.transcoder)` guard forever.
+    this.resetTalkback();
   }
 
   private openTalkbackPost(target: TalkbackTarget, body: PassThrough): void {
@@ -424,10 +435,12 @@ export class AmcrestCamera {
     if (this.transcoder || this.talkbackBody) {
       this.log.debug('Talkback session closing');
     }
-    // Fire-and-forget: close() failures must not become unhandled rejections.
-    void this.transcoder?.close().catch(() => {});
+    try {
+      this.transcoder?.close();
+    } catch {
+      // A failing close must not stop the rest of the teardown.
+    }
     this.transcoder = undefined;
-    this.transcoderStarting = undefined;
     this.talkbackBody?.end();
     this.talkbackBody = undefined;
   }
