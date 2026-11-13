@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.2
+
+Fixes PTZ control. Nothing to reconfigure, and the requirements are unchanged at camera.ui 2.1.10 and Node 24.
+
+- **Zoom stops when you let go of the button.** Pressing zoom in or out ran the lens all the way to its limit. Every stop was sent to the camera as "stop moving up", and Amcrest firmware only honours a stop that names the move actually running, so a zoom never stopped. The plugin now remembers which move it started and stops that one. Switching direction mid-move (from zoom to pan, say) also stops the first move before starting the second, instead of leaving it running underneath.
+- **The PTZ controls match what the camera can do.** The plugin decided which controls to show by looking for words like "Zoom" or "Up" anywhere in the camera's capability report, without reading whether each was `true` or `false`. A camera reporting `caps.Zoom=false`, such as the Amcrest P4M-1051, still got a zoom control, and pan and tilt were only detected by accident. The plugin now reads the camera's pan, tilt and zoom settings directly, so a pan/tilt camera without zoom shows pan and tilt and no zoom.
+
 ## 1.9.1
 
 Fixes an upgrade that could leave the plugin not starting at all. **If you updated to 1.9.0 and the plugin failed to start, this is the fix** — nothing to reconfigure, and the requirements are unchanged at camera.ui 2.1.10 and Node 24.
