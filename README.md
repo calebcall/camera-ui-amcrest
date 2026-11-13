@@ -4,7 +4,7 @@ Amcrest and Dahua-compatible camera integration for camera.ui. Provides camera d
 
 ## Requirements
 
-- **camera.ui 2.1.10 or newer.** Server 2.1.6 replaced the single detection-zone list with one list per purpose (motion, object, privacy, alert, lines), and 2.1.10 settled that shape by dropping the interim include/exclude filter. This plugin targets the SDK generation that came with it, so on an older server its zones — and, on servers before 2.0.24, its sensors — would not work. The floor turns that into a clear message at install time instead of a feature that silently never appears.
+- **camera.ui 2.4.5 or newer.** The plugin's RTSP relay is built on `@seydx/rtsp` 2.x, which needs the `node-av` 6.2.0 media library that camera.ui provides to plugins, and camera.ui ships that from 2.4.5. Older servers also lack the per-purpose detection zones (motion, object, privacy, alert, lines) the plugin is built around. The floor turns that into a clear message at install time instead of a plugin that fails when it starts streaming.
 - **Node 24 or newer.** `@seydx/rtsp`, used for RTSP relay and talkback, ships syntax Node 22 cannot parse.
 
 ## Supported devices
