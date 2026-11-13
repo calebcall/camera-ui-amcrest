@@ -22,7 +22,7 @@ NVR-attached channels are not supported in this release — see [Known limitatio
 - **Two-way audio** — talkback over the device's native audio path. Amcrest-branded devices use the AAC path; Dahua-branded doorbells use G.711A (see [Known limitations](#known-limitations--v2)).
 - **Events** — motion, object detection (person/vehicle), audio detection, and doorbell press, all delivered over the device's native event stream (no polling).
 - **Tamper & fault state** — the camera's own reports that its view has been interfered with (lens covered, scene changed, defocused) or that the device is unwell (video signal lost, storage missing, failing or nearly full), as two sensors.
-- **PTZ** — pan/tilt/zoom control for capable cameras, exposed as a PTZ sensor/service.
+- **PTZ** — pan/tilt/zoom control for capable cameras, exposed as a PTZ sensor/service, plus the camera's saved presets on models that support them.
 - **Discovery** — automatic discovery of Dahua-compatible devices on the local network via UDP, plus manual add for devices that don't respond to discovery (e.g. across subnets).
 
 ## Setup
@@ -145,6 +145,12 @@ SmartMotionHuman (person) carried no coordinates, so detection zones cannot be a
 ```
 
 That is expected on some firmware. A detection with no position is let through rather than dropped, so a terse camera never costs you a real detection. Note that this line is only logged when you have zones drawn — with no zones there is nothing for the missing coordinates to cost you, so it is not worth saying.
+
+## Audio detection
+
+The camera reports that it heard something, not what it heard, so camera.ui files every Amcrest audio event under the generic label `audio`. That is not one of camera.ui's named sounds (doorbell, glass break, siren, speaking and so on), so camera.ui counts it as **other**.
+
+This matters if you narrow a camera's audio detection to particular sounds. **Keep `other` in the list**, or every audio event from an Amcrest camera is dropped, with nothing in the log to say so. Leaving the list unset counts every sound, which is the default.
 
 ## Tamper and fault sensors
 
