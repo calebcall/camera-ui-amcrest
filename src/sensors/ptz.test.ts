@@ -52,3 +52,40 @@ test('a second stop after the move ended falls back to Up', async () => {
     ['start:Down', 'stop:Down', 'stop:Up'],
   );
 });
+
+test('going to a preset sends GotoPreset with its index', async () => {
+  const { client, sent } = fakeClient();
+  const ptz = new AmcrestPTZSensor(client, 1);
+  ptz.loadPresets([
+    { index: 1, name: 'Front Door' },
+    { index: 4, name: 'Driveway' },
+  ]);
+  assert.deepEqual(ptz.presets, ['Front Door', 'Driveway']);
+  await ptz.setTargetPreset('Driveway');
+  assert.deepEqual(
+    sent.map((c) => `${c.action}:${c.code}:${c.arg2}`),
+    ['start:GotoPreset:4'],
+  );
+});
+
+test('a preset stops a running move first', async () => {
+  const { client, sent } = fakeClient();
+  const ptz = new AmcrestPTZSensor(client, 1);
+  ptz.loadPresets([{ index: 2, name: 'Gate' }]);
+  await ptz.setVelocity({ panSpeed: 1, tiltSpeed: 0, zoomSpeed: 0 });
+  await ptz.setTargetPreset('Gate');
+  await ptz.setVelocity(STOP);
+  assert.deepEqual(
+    sent.map((c) => `${c.action}:${c.code}`),
+    ['start:Right', 'stop:Right', 'start:GotoPreset', 'stop:Up'],
+  );
+});
+
+test('an unknown preset name sends nothing', async () => {
+  const { client, sent } = fakeClient();
+  const ptz = new AmcrestPTZSensor(client, 1);
+  ptz.loadPresets([{ index: 2, name: 'Gate' }]);
+  await ptz.setTargetPreset('Nope');
+  await ptz.setTargetPreset(undefined);
+  assert.deepEqual(sent, []);
+});

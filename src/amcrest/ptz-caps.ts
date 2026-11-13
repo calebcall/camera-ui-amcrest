@@ -3,6 +3,8 @@ export interface PtzCaps {
   pan: boolean;
   tilt: boolean;
   zoom: boolean;
+  /** Camera stores presets (`caps.Preset=true`) and has an axis to move. */
+  presets: boolean;
 }
 
 /**
@@ -27,10 +29,18 @@ export function parsePtzCaps(text: string): PtzCaps {
     const pan = values.get('pan') === 'true';
     const tilt = values.get('tile') === 'true' || values.get('tilt') === 'true';
     const zoom = values.get('zoom') === 'true';
-    return { ptz: pan || tilt || zoom, pan, tilt, zoom };
+    const ptz = pan || tilt || zoom;
+    const presets = ptz && values.get('preset') === 'true';
+    return { ptz, pan, tilt, zoom, presets };
   }
 
   const panTilt = /\b(Left|Right|Up|Down)\b/i.test(text);
   const zoom = /\bZoom(Tele|Wide)?\b/i.test(text);
-  return { ptz: panTilt || zoom, pan: panTilt, tilt: panTilt, zoom };
+  return {
+    ptz: panTilt || zoom,
+    pan: panTilt,
+    tilt: panTilt,
+    zoom,
+    presets: false,
+  };
 }

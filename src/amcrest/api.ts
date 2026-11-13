@@ -143,6 +143,13 @@ export class AmcrestClient {
     await this.fetch(q);
   }
 
+  async getPtzPresets(channel: number): Promise<string> {
+    const res = await this.fetch(
+      `/cgi-bin/ptz.cgi?action=getPresets&channel=${channel}`,
+    );
+    return await res.text();
+  }
+
   async getPtzCaps(channel: number): Promise<string> {
     const res = await this.fetch(
       `/cgi-bin/ptz.cgi?action=getCurrentProtocolCaps&channel=${channel}`,
