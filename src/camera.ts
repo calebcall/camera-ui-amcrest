@@ -12,6 +12,7 @@ import {
   extractCompleteEvents,
 } from './amcrest/event-reader.js';
 import { parseAmcrestEvent } from './amcrest/events.js';
+import { parsePtzCaps } from './amcrest/ptz-caps.js';
 import {
   describeTalkbackRejection,
   selectTalkbackTarget,
@@ -38,6 +39,7 @@ import type {
   AmcrestClassification,
   AmcrestDetection,
 } from './amcrest/classify.js';
+import type { PtzCaps } from './amcrest/ptz-caps.js';
 import type { TalkbackTarget } from './amcrest/talkback.js';
 import type {
   AmcrestCapabilities,
@@ -830,12 +832,9 @@ export class AmcrestCamera {
 async function fetchPtzCaps(
   client: AmcrestClient,
   channel: number,
-): Promise<{ ptz: boolean; pan: boolean; tilt: boolean; zoom: boolean }> {
+): Promise<PtzCaps> {
   // Routed through the authenticated client (digest auth) — a raw, unauthenticated
   // fetch here always gets a 401 from real devices and PTZ never gets detected.
   const text = await client.getPtzCaps(channel).catch(() => '');
-  const hasPanTilt = /Left|Right|Up|Down/i.test(text);
-  const hasZoom = /Zoom/i.test(text);
-  const ptz = hasPanTilt || hasZoom;
-  return { ptz, pan: hasPanTilt, tilt: hasPanTilt, zoom: hasZoom };
+  return parsePtzCaps(text);
 }
