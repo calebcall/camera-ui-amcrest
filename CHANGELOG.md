@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.10.0
+
+**camera.ui 2.4.5 or newer is now required** (previously 2.1.10). The plugin's RTSP relay moved to `@seydx/rtsp` 2.x, which needs the `node-av` 6.2.0 media library that camera.ui provides to plugins, and camera.ui first ships it in 2.4.5. As before, the floor turns an older server into a clear message at install time instead of a plugin that fails when it starts streaming. Node 24 is unchanged.
+
+### PTZ presets
+
+- **Your camera's saved presets now appear in camera.ui.** On cameras that report preset support, the plugin reads the preset list at startup and picking one moves the camera there. Presets you never named show up as `Preset 1`, `Preset 2` and so on, and two presets with the same name are told apart by their number. A move that is still running is stopped before the camera heads to the preset. Presets are read when the camera starts, so one saved later appears after the next restart of the plugin.
+
+### Doorbells
+
+- **Doorbells are adopted as doorbells.** camera.ui now has a camera type for doorbells, and the plugin sets it for doorbell models (the same models that get a doorbell press sensor). This applies when a camera is adopted, so a doorbell you added before this release keeps its current type unless you remove and re-add it.
+
+### Audio detection
+
+- **New README note: an audio label filter needs `other` for Amcrest events.** The camera reports that it heard something, not what, so camera.ui counts these events as `other`. If you narrow a camera's audio detection to particular sounds and leave `other` out, every Amcrest audio event is dropped without a log line.
+
+### Dependencies
+
+- `@camera.ui/sdk` 1.4.9 and `@camera.ui/cli` 0.1.4. No behaviour changes for the plugin; camera.ui supplies its own copy of the SDK at runtime.
+- `@seydx/rtsp` 2.1.9 (major). The relay and talkback code were moved to its new API.
+- Lint, test and build tooling updated to latest. TypeScript stays on 6.0 until `typescript-eslint` supports 7.
+
 ## 1.9.2
 
 Fixes PTZ control. Nothing to reconfigure, and the requirements are unchanged at camera.ui 2.1.10 and Node 24.
