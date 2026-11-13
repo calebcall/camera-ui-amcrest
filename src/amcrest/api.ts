@@ -2,13 +2,12 @@ import { Buffer } from 'node:buffer';
 
 import { digestFetch } from './digest-auth.js';
 import { parseEncodeConfig } from './encode-config.js';
-import { ptzCommandForVelocity } from './ptz-commands.js';
 import { buildRtspUrl } from './rtsp-url.js';
 import { describeSnapshotRejection } from './snapshot.js';
 import { parseSystemInfo } from './system-info.js';
 
 import type { AmcrestStreamSet } from './encode-config.js';
-import type { PtzVelocity } from './ptz-commands.js';
+import type { PtzCommand } from './ptz-commands.js';
 import type { AmcrestSystemInfo } from './system-info.js';
 
 export interface AmcrestClientOptions {
@@ -139,8 +138,7 @@ export class AmcrestClient {
     return body;
   }
 
-  async ptz(channel: number, v: PtzVelocity): Promise<void> {
-    const cmd = ptzCommandForVelocity(v);
+  async sendPtzCommand(channel: number, cmd: PtzCommand): Promise<void> {
     const q = `/cgi-bin/ptz.cgi?action=${cmd.action}&channel=${channel}&code=${cmd.code}&arg1=0&arg2=${cmd.arg2}&arg3=0`;
     await this.fetch(q);
   }
