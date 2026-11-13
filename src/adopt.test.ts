@@ -202,3 +202,23 @@ test('configureCameras: one camera that throws does not stop the others', async 
     'the camera after the failure must still have been attempted',
   );
 });
+
+test('doorbell models adopt as camera type doorbell', () => {
+  const base = {
+    name: 'x',
+    nativeId: 'x',
+    ip: '10.0.0.1',
+    username: 'a',
+    password: 'b',
+    port: 554,
+    channel: 1,
+    streams: [],
+  };
+  const typeFor = (model?: string) =>
+    buildCameraConfig({ ...base, info: { model } }).type;
+  assert.equal(typeFor('AD410'), 'doorbell');
+  assert.equal(typeFor('DB61i'), 'doorbell');
+  assert.equal(typeFor('IP4M-1051'), 'camera');
+  assert.equal(typeFor('P4M-1051'), 'camera');
+  assert.equal(typeFor(undefined), 'camera');
+});
