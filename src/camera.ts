@@ -18,6 +18,7 @@ import {
 } from './amcrest/event-reader.js';
 import { parseAmcrestEvent } from './amcrest/events.js';
 import { parsePtzCaps } from './amcrest/ptz-caps.js';
+import { parsePtzPresets } from './amcrest/ptz-presets.js';
 import {
   describeTalkbackRejection,
   selectTalkbackTarget,
@@ -151,6 +152,7 @@ export class AmcrestCamera {
     ptzPan: false,
     ptzTilt: false,
     ptzZoom: false,
+    ptzPresets: false,
   };
 
   constructor(private readonly cameraDevice: CameraDevice) {
@@ -453,6 +455,7 @@ export class AmcrestCamera {
       ptzPan: false,
       ptzTilt: false,
       ptzZoom: false,
+      ptzPresets: false,
     };
     try {
       const info = await this.client.getSystemInfo();
@@ -467,6 +470,7 @@ export class AmcrestCamera {
       caps.ptzPan = probe.pan;
       caps.ptzTilt = probe.tilt;
       caps.ptzZoom = probe.zoom;
+      caps.ptzPresets = probe.presets;
     } catch (error) {
       this.log.debug('PTZ capability probe failed:', error);
     }
@@ -494,8 +498,26 @@ export class AmcrestCamera {
         this.capabilities.ptzPan,
         this.capabilities.ptzTilt,
         this.capabilities.ptzZoom,
+        this.capabilities.ptzPresets,
       );
       this.ptz = await this.addSensor(ptz);
+      if (this.ptz && this.capabilities.ptzPresets) await this.loadPtzPresets();
+    }
+  }
+
+  /**
+   * Publishes the camera's PTZ presets. A failure only costs the preset list,
+   * never the PTZ sensor or camera startup.
+   */
+  private async loadPtzPresets(): Promise<void> {
+    try {
+      const presets = parsePtzPresets(
+        await this.client.getPtzPresets(this.channel),
+      );
+      this.ptz?.loadPresets(presets);
+      this.log.debug(`PTZ presets loaded: ${presets.length}`);
+    } catch (error) {
+      this.log.debug('PTZ preset list failed:', error);
     }
   }
 

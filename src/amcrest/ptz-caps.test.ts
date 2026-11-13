@@ -64,13 +64,14 @@ test('P4M-1051: pan and tilt, no zoom', () => {
     pan: true,
     tilt: true,
     zoom: false,
+    presets: true,
   });
 });
 
 test('zoom-only camera', () => {
   assert.deepEqual(
     parsePtzCaps('caps.Pan=false\r\ncaps.Tile=false\r\ncaps.Zoom=true\r\n'),
-    { ptz: true, pan: false, tilt: false, zoom: true },
+    { ptz: true, pan: false, tilt: false, zoom: true, presets: false },
   );
 });
 
@@ -80,18 +81,25 @@ test('accepts the Tilt spelling and is case-insensitive on values', () => {
     pan: true,
     tilt: true,
     zoom: false,
+    presets: false,
   });
 });
 
 test('every axis false means no PTZ', () => {
   assert.deepEqual(
     parsePtzCaps('caps.Pan=false\ncaps.Tile=false\ncaps.Zoom=false\n'),
-    { ptz: false, pan: false, tilt: false, zoom: false },
+    { ptz: false, pan: false, tilt: false, zoom: false, presets: false },
   );
 });
 
 test('empty or error reply means no PTZ', () => {
-  const none = { ptz: false, pan: false, tilt: false, zoom: false };
+  const none = {
+    ptz: false,
+    pan: false,
+    tilt: false,
+    zoom: false,
+    presets: false,
+  };
   assert.deepEqual(parsePtzCaps(''), none);
   assert.deepEqual(parsePtzCaps('Error\r\nBad Request!\r\n'), none);
 });
@@ -102,5 +110,20 @@ test('falls back to direction words when no axis keys are present', () => {
     pan: true,
     tilt: true,
     zoom: true,
+    presets: false,
   });
+});
+
+test('presets need caps.Preset=true and a movable axis', () => {
+  assert.equal(parsePtzCaps('caps.Pan=true\ncaps.Preset=true\n').presets, true);
+  assert.equal(
+    parsePtzCaps('caps.Pan=true\ncaps.Preset=false\n').presets,
+    false,
+  );
+  assert.equal(
+    parsePtzCaps(
+      'caps.Pan=false\ncaps.Tile=false\ncaps.Zoom=false\ncaps.Preset=true\n',
+    ).presets,
+    false,
+  );
 });

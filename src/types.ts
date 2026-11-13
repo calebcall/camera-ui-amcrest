@@ -33,4 +33,5 @@ export interface AmcrestCapabilities {
   ptzPan: boolean;
   ptzTilt: boolean;
   ptzZoom: boolean;
+  ptzPresets: boolean;
 }
